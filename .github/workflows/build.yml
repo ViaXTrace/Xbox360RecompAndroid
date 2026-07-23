@@ -52,6 +52,20 @@ jobs:
         with:
           cmake-version: '3.22.x'
 
+      - name: Generate android/local.properties
+        run: |
+          cat > android/local.properties <<EOF
+          sdk.dir=$ANDROID_SDK_ROOT
+          flutter.sdk=$(flutter --version 2>/dev/null; which flutter | xargs readlink -f | sed 's|/bin/flutter||')
+          flutter.versionCode=1
+          flutter.versionName=0.1.0
+          EOF
+          # Use Flutter SDK path from the action
+          FLUTTER_SDK_PATH=$(dirname $(dirname $(which flutter)))
+          sed -i "s|flutter.sdk=.*|flutter.sdk=$FLUTTER_SDK_PATH|" android/local.properties
+          echo "--- local.properties ---"
+          cat android/local.properties
+
       - name: Cache pub dependencies
         uses: actions/cache@v4
         with:
@@ -129,30 +143,26 @@ jobs:
       - name: Rename APK artifacts
         run: |
           mkdir -p dist
-          VERSION="${GITHUB_REF_NAME:-dev-${{ github.run_number }}}"
-          if [ -f "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" ]; then
+          if startsWith(github.ref, 'refs/tags/v'); then
             cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-               dist/Xbox360RecompAndroid-${VERSION}-arm64.apk
-          elif [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+               dist/Xbox360RecompAndroid-${{ github.ref_name }}-arm64.apk
+          else
             cp build/app/outputs/flutter-apk/app-debug.apk \
-               dist/Xbox360RecompAndroid-${VERSION}-arm64-debug.apk
+               dist/Xbox360RecompAndroid-${{ github.sha }}-debug.apk || true
           fi
-          ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ github.ref_name }}-${{ github.run_number }}
+          name: apk-${{ github.sha }}
           path: dist/*.apk
           retention-days: 30
 
-  release:
+  create-release:
     name: Create GitHub Release
-    needs: build-apk
     runs-on: ubuntu-latest
+    needs: build-apk
     if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
@@ -170,7 +180,6 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          # Extract changelog section for this version
           TAG="${GITHUB_REF_NAME}"
           PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "$TAG" | tail -1)
           echo "## Changes in $TAG" > changelog.md
@@ -179,7 +188,6 @@ jobs:
           else
             git log --pretty=format:"- %s (%h)" -20 >> changelog.md
           fi
-          echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -201,6 +209,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate games.json
         run: |
-          cat compat/games.json | python3 -m json.tool > /dev/null && echo "✅ compat/games.json is valid JSON"
-          COUNT=$(cat compat/games.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('games',[])))")
-          echo "📊 Games in database: $COUNT"
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('compat/games.json', 'utf8'));
+            console.log('✅ compat/games.json is valid JSON');
+            console.log('📊 Games in database:', data.games.length);
+          "
