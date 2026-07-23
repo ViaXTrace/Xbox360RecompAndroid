@@ -311,7 +311,7 @@ static size_t emitIr(uint8_t*& out, const struct IrInstr& ir, const PPCContext& 
 
 // Flush instruction cache for the given range (required after JIT code write)
 void JitEngine::flushICache(uint8_t* start, size_t size) {
-    __builtin___clear_cache(start, start + size);
+    __builtin___clear_cache(reinterpret_cast<char*>(start), reinterpret_cast<char*>(start + size));
 }
 
 // ─── jitCompileBlock ────────────────────────────────────────────────────────────
@@ -328,7 +328,7 @@ size_t JitEngine::jitCompileBlock(const IrBlock& block, uint8_t* out, size_t max
                  (unsigned long long)ir.guestPc);
             break;
         }
-        size_t emitted = emitArm64Instr(cursor, ir);
+        PPCContext dummy_ctx{}; size_t emitted = emitIr(cursor, ir, dummy_ctx);
         cursor += emitted;
     }
 
