@@ -1,29 +1,49 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Network: update check, IGDB artwork, compat DB -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <!-- Storage: game imports via SAF, save backups -->
+    <!-- Storage permissions: targeting Android 13+ (SDK 33) uses granular media perms,
+         older versions use MANAGE_EXTERNAL_STORAGE or READ/WRITE_EXTERNAL_STORAGE. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+    <!-- Android 11+ broad access (for game files in arbitrary directories) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        android:minSdkVersion="30"
+        android:maxSdkVersion="32" />
+    <!-- Android 13+ granular media permissions -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+        android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
+        android:minSdkVersion="33" />
 
-    <!-- Vibration for gamepad rumble -->
-    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Notifications for foreground JIT compilation service (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"
+        android:minSdkVersion="33" />
 
-    <!-- Keep CPU alive during JIT execution -->
+    <!-- Foreground service for long-running JIT and emulation -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- Network for compatibility database sync -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Keep CPU alive during emulation -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Vulkan 1.1 required -->
+    <!-- Vibration for controller haptics -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Hardware requirements: Vulkan is mandatory for the GPU layer -->
     <uses-feature android:name="android.hardware.vulkan.version"
         android:version="0x00401000"
         android:required="true" />
     <uses-feature android:name="android.hardware.vulkan.level"
         android:version="0"
         android:required="true" />
+
+    <!-- arm64 / 64-bit ABI required for JIT engine -->
+    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
 
     <application
         android:label="Xbox360Recomp"
@@ -33,7 +53,8 @@
         android:hardwareAccelerated="true"
         android:requestLegacyExternalStorage="false"
         android:allowBackup="false"
-        android:fullBackupContent="false">
+        android:fullBackupContent="false"
+        android:largeHeap="true">
 
         <activity
             android:name=".MainActivity"
@@ -42,27 +63,49 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="fullSensor">
 
-            <!-- Landscape-primary; portrait also supported -->
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="" />
 
+            <!-- Main launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- SAF file import intents -->
+            <!-- Open XEX files directly -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.xex" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.iso" />
+            </intent-filter>
         </activity>
 
-        <!-- Background JIT service (future: foreground service for long compilation) -->
+        <!-- JIT foreground service (future: for pre-compilation progress notifications) -->
+        <service
+            android:name=".JitService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
