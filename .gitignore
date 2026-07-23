@@ -1,0 +1,40 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/release.keystore
+android/key.properties
+android/.cxx/
+*.apk
+*.aab
+
+# Native build artifacts
+native/build/
+native/*.so
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dart generated files
+*.g.dart
+*.freezed.dart
+lib/**/*.g.dart
+lib/**/*.freezed.dart
