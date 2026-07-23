@@ -114,7 +114,7 @@ private:
     bool createSyncObjects();
 
     void dispatchType3(Pm4OpCode op, const uint32_t* params, uint32_t count);
-    void handleDrawIndx(const uint32_t* params);
+    void handleDrawIndx(const uint32_t* params, uint32_t count);
     void handleSetConstant(const uint32_t* params, uint32_t count);
     void handleSwap();
     void handleIndirectBuffer(uint32_t ptr, uint32_t size);
