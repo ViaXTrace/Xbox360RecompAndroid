@@ -375,15 +375,7 @@ void GpuLayer::onSurfaceChanged(int width, int height) {
 
 float GpuLayer::currentFps() const { return m_fps; }
 
-bool GpuLayer::loadCustomDriver(const std::string& /*driverPath*/) {
-    LOGI("VK: custom driver loading stub");
-    return false;
-}
 
-bool GpuLayer::loadTurnipDriver() {
-    LOGI("VK: Turnip driver loading stub (requires AdrenoTools integration)");
-    return false;
-}
 
 } // namespace gpu
 } // namespace x360
