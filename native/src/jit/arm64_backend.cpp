@@ -318,7 +318,10 @@ void JitEngine::flushICache(uint8_t* start, size_t size) {
 // Called by JitEngine to compile a single guest IR block into native ARM64.
 // Returns the size of emitted code in bytes, or 0 on failure.
 // Defined here (arm64_backend.cpp) to keep all ARM64 code generation in one file.
-size_t JitEngine::jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes) {
+size_t JitEngine::jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes,
+                                   uint8_t* guestMemory, uint64_t guestBase) {
+    (void)guestMemory; // available for future address resolution
+    (void)guestBase;
     uint8_t* cursor = out;
     const uint8_t* end = out + maxBytes;
 
