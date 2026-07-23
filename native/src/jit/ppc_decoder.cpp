@@ -4,6 +4,7 @@
  * Reference: xenia ppc_decode_data.cc, IBM PowerPC 2.02 ISA
  */
 #include "../../include/jit/jit_engine.h"
+#include "../../include/jit/ir.h"
 #include <android/log.h>
 #include <cstdint>
 #include <cstring>
@@ -40,7 +41,6 @@ static inline bool PPC_AA(uint32_t i) { return (i >> 1) & 1; }
 static inline bool PPC_LK(uint32_t i) { return i & 1; }
 
 // ─── IR types (shared with arm64_backend) ─────────────────────────────────────
-#include "../../include/jit/ir.h"
 
 // Decode a single 32-bit instruction into an IrInstr
 static IrInstr decodePPC(uint32_t instr, uint64_t pc) {
