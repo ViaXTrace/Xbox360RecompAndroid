@@ -81,7 +81,8 @@ private:
 
     uint8_t* allocJitPage(size_t size);
     void     flushICache(uint8_t* start, size_t size);
-    size_t jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes);
+    size_t jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes,
+                           uint8_t* guestMemory, uint64_t guestBase);
 
     // Guest memory
     uint8_t* m_guestMemory = nullptr;
