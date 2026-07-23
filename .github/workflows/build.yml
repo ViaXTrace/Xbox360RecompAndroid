@@ -143,7 +143,7 @@ jobs:
       - name: Rename APK artifacts
         run: |
           mkdir -p dist
-          if startsWith(github.ref, 'refs/tags/v'); then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
                dist/Xbox360RecompAndroid-${{ github.ref_name }}-arm64.apk
           else
