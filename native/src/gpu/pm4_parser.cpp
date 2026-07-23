@@ -84,15 +84,12 @@ void GpuLayer::dispatchType3(Pm4OpCode op, const uint32_t* params, uint32_t coun
 
     case Pm4OpCode::DrawIndx:
     case Pm4OpCode::DrawIndx2:
-        handleDrawIndx(params);
+        handleDrawIndx(params, count);
         break;
 
     case Pm4OpCode::SetConstant:
-        handleSetConstant(params, count);
-        break;
-
     case Pm4OpCode::SetConstantF:
-        // Set floating-point shader constants (same structure, different bank)
+        // Both integer and float constant banks share the same layout
         handleSetConstant(params, count);
         break;
 
@@ -104,13 +101,13 @@ void GpuLayer::dispatchType3(Pm4OpCode op, const uint32_t* params, uint32_t coun
         }
         break;
 
-    case Pm4OpCode::Swap:
     case Pm4OpCode::EventWriteEop:
+        // EventWriteEop with CACHE_FLUSH_AND_INV_TS_EVENT signals end-of-frame;
+        // treat every EOP as a swap trigger (safe: worst case is extra presents).
         handleSwap();
         break;
 
     case Pm4OpCode::LoadState:
-        // Load GPU state block — parse register range
         if (count >= 2) {
             uint32_t addr = __builtin_bswap32(params[0]);
             uint32_t num  = __builtin_bswap32(params[1]) & 0xFFF;
@@ -131,14 +128,15 @@ void GpuLayer::dispatchType3(Pm4OpCode op, const uint32_t* params, uint32_t coun
     }
 }
 
-void GpuLayer::handleDrawIndx(const uint32_t* params) {
-    if (!m_initialized) return;
+// handleDrawIndx — now takes an explicit count so we can guard params[1] access.
+// PM4 DrawIndx layout (from Xenia / ATI R200 spec):
+//   params[0] = VTX_COUNT
+//   params[1] = VGT_DRAW_INITIATOR (prim type, index type, src sel, etc.)
+void GpuLayer::handleDrawIndx(const uint32_t* params, uint32_t count) {
+    if (!m_initialized || count < 1) return;
 
-    // params[0] = VTX count
-    // params[1] = draw initiator (prim type, index type, etc.)
-    // Simplified draw dispatch — full implementation requires vertex buffer binding
-    uint32_t vtxCount = __builtin_bswap32(params[0]);
-    uint32_t initiator = (count_hint: 2) ? __builtin_bswap32(params[1]) : 0;
+    uint32_t vtxCount  = __builtin_bswap32(params[0]);
+    uint32_t initiator = (count >= 2) ? __builtin_bswap32(params[1]) : 0;
 
     LOGI("PM4: DRAW_INDX vtxCount=%u initiator=0x%X", vtxCount, initiator);
 
