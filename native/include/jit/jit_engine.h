@@ -81,7 +81,7 @@ private:
 
     uint8_t* allocJitPage(size_t size);
     void     flushICache(uint8_t* start, size_t size);
-    size_t   jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes);
+    // jitCompileBlock is a free function defined in arm64_backend.cpp
 
     // Guest memory
     uint8_t* m_guestMemory = nullptr;
@@ -98,8 +98,8 @@ private:
     size_t   m_codeArenaSize = 64 * 1024 * 1024; // 64 MB
     std::atomic<size_t> m_codeArenaOffset{0};
 
-    // HLE handlers
-    std::unordered_map<std::string, std::unordered_map<uint32_t, HleHandler>> m_hleHandlers;
+    // HLE handlers — key = hash(module) ^ (ordinal << 32)
+    std::unordered_map<uint64_t, HleHandler> m_hleHandlers;
 
     // Thread management
     std::vector<std::thread> m_threads;
