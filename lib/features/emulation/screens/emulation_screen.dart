@@ -4,11 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/models/game_entry.dart';
 import '../../../core/native/engine_bridge.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../library/providers/library_provider.dart';
-import '../widgets/touch_controls_overlay.dart';
 import '../widgets/metrics_overlay.dart';
+import '../widgets/touch_controls_overlay.dart';
 
 class EmulationScreen extends ConsumerStatefulWidget {
   final String titleId;
@@ -20,272 +20,363 @@ class EmulationScreen extends ConsumerStatefulWidget {
 
 class _EmulationScreenState extends ConsumerState<EmulationScreen>
     with WidgetsBindingObserver {
-  bool _running = false;
-  bool _paused = false;
-  bool _showOverlay = false;
-  bool _showMetrics = false;
-  Timer? _metricsTimer;
-  double _fps = 0;
-  double _frameTime = 0;
-  int _ramMb = 0;
+  bool _showControls = true;
+  bool _showMetrics = true;
+  bool _showMenu = false;
+  bool _isRunning = false;
+  bool _isPaused = false;
+  String _statusMessage = 'Initializing…';
+  Timer? _playtimeTimer;
+  int _sessionSeconds = 0;
+  Timer? _menuHideTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _enterImmersive();
+    _enterFullscreen();
     _startEmulation();
   }
 
   @override
   void dispose() {
-    _metricsTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    _playtimeTimer?.cancel();
+    _menuHideTimer?.cancel();
     _stopEmulation();
-    _exitImmersive();
+    _exitFullscreen();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused && _running) _pauseEmulation();
-    if (state == AppLifecycleState.resumed && _paused) _resumeEmulation();
+    if (state == AppLifecycleState.paused && _isRunning) {
+      _pauseEmulation();
+    } else if (state == AppLifecycleState.resumed && _isPaused) {
+      _resumeEmulation();
+    }
   }
 
-  void _enterImmersive() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  void _enterFullscreen() {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  void _exitImmersive() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  void _exitFullscreen() {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   Future<void> _startEmulation() async {
-    final game = ref.read(libraryProvider.notifier).getGame(widget.titleId);
-    if (game == null) return;
+    setState(() => _statusMessage = 'Loading game…');
+    final game = ref.read(libraryProvider).valueOrNull
+        ?.firstWhere((g) => g.titleId == widget.titleId, orElse: () => throw Exception('Game not found'));
 
-    if (EngineBridge.isAvailable) {
-      EngineBridge.engineInit(logLevel: 1);
-      final rc = switch (game.format) {
-        GameFormat.xex => EngineBridge.loadXex(game.execPath),
-        GameFormat.iso => EngineBridge.loadIso(game.execPath),
-        GameFormat.stfs => EngineBridge.loadStfs(game.execPath),
-        _ => -1,
-      };
-      if (rc != 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load game executable')),
-        );
-        context.pop();
-        return;
-      }
-      EngineBridge.startJit(threadCount: 4);
+    if (game == null) {
+      if (mounted) context.pop();
+      return;
     }
 
-    setState(() => _running = true);
-    ref.read(libraryProvider.notifier).updateLastPlayed(widget.titleId);
+    try {
+      setState(() => _statusMessage = 'Parsing executable…');
+      final bridge = EngineBridge.instance;
+      int result = await compute((_) => bridge.loadGame(game.execPath, game.format), null);
 
-    // Start metrics polling
-    _metricsTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted || !_showMetrics) return;
+      if (result != 0) {
+        if (mounted) _showError('Failed to load game (error $result)');
+        return;
+      }
+
+      setState(() => _statusMessage = 'Starting JIT engine…');
+      result = await compute((_) => bridge.startJit(4), null);
+      if (result != 0) {
+        if (mounted) _showError('JIT engine failed to start (error $result)');
+        return;
+      }
+
       setState(() {
-        _fps = EngineBridge.getFps();
-        _frameTime = EngineBridge.getFrameTime();
-        _ramMb = EngineBridge.getRamUsage() ~/ (1024 * 1024);
+        _statusMessage = 'Running';
+        _isRunning = true;
       });
-    });
+
+      _playtimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        _sessionSeconds++;
+      });
+    } catch (e) {
+      if (mounted) _showError('$e');
+    }
   }
 
   void _pauseEmulation() {
-    setState(() => _paused = true);
-    // TODO: call native pause
+    if (!_isRunning || _isPaused) return;
+    EngineBridge.instance.pauseJit();
+    setState(() => _isPaused = true);
+    _playtimeTimer?.cancel();
   }
 
   void _resumeEmulation() {
-    setState(() => _paused = false);
-    // TODO: call native resume
+    if (!_isPaused) return;
+    EngineBridge.instance.resumeJit();
+    setState(() => _isPaused = false);
+    _playtimeTimer = Timer.periodic(const Duration(seconds: 1), (_) => _sessionSeconds++);
   }
 
   void _stopEmulation() {
-    _metricsTimer?.cancel();
-    if (EngineBridge.isAvailable) {
-      EngineBridge.stopJit();
-      EngineBridge.unloadGame();
-      EngineBridge.engineShutdown();
+    if (_isRunning) {
+      EngineBridge.instance.stopJit();
+      EngineBridge.instance.unloadGame();
+      _savePlaytime();
     }
-    setState(() { _running = false; _paused = false; });
+  }
+
+  void _savePlaytime() {
+    if (_sessionSeconds > 0) {
+      ref.read(libraryProvider.notifier).addPlaytime(widget.titleId, _sessionSeconds);
+    }
+  }
+
+  void _showError(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Emulation Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () { Navigator.pop(context); context.pop(); },
+            child: const Text('Back to Library'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleMenu() {
+    setState(() => _showMenu = !_showMenu);
+    if (_showMenu) {
+      _menuHideTimer?.cancel();
+      _menuHideTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) setState(() => _showMenu = false);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // Game surface — Vulkan renders here via AndroidView
-          if (EngineBridge.isAvailable)
-            const AndroidView(
-              viewType: 'com.xbox360recomp/game_surface',
-              creationParams: {},
-              creationParamsCodec: StandardMessageCodec(),
-            )
-          else
-            _buildStubSurface(),
+      body: GestureDetector(
+        onTap: _toggleMenu,
+        child: Stack(
+          children: [
+            // Native rendering surface
+            const _GameSurface(),
 
-          // Pause overlay
-          if (_paused)
-            _buildPauseOverlay(),
-
-          // Touch controls
-          TouchControlsOverlay(
-            onButtonPressed: _onButton,
-            onAxisChanged: _onAxis,
-          ),
-
-          // Metrics overlay
-          if (_showMetrics)
-            MetricsOverlay(fps: _fps, frameTime: _frameTime, ramMb: _ramMb),
-
-          // Menu button (top-right, small)
-          Positioned(
-            top: 8, right: 8,
-            child: GestureDetector(
-              onTap: () => setState(() => _showOverlay = !_showOverlay),
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.black38,
-                  borderRadius: BorderRadius.circular(8),
+            // Loading overlay
+            if (!_isRunning)
+              Container(
+                color: Colors.black,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: AppTheme.xboxGreen, strokeWidth: 3),
+                      const SizedBox(height: 20),
+                      Text(_statusMessage,
+                          style: const TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
                 ),
-                child: const Icon(Icons.menu, size: 18, color: Colors.white54),
               ),
-            ),
-          ),
 
-          // Dropdown menu
-          if (_showOverlay)
-            Positioned(
-              top: 48, right: 8,
-              child: _buildMenu(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStubSurface() {
-    return Container(
-      color: const Color(0xFF0D0D0D),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: const Color(0xFF107C10).withOpacity(0.15),
-                shape: BoxShape.circle,
+            // Paused overlay
+            if (_isPaused)
+              Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.pause_circle_filled, size: 56, color: AppTheme.xboxGreen),
+                        const SizedBox(height: 12),
+                        const Text('Paused', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _resumeEmulation,
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Resume'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              child: const Icon(Icons.sports_esports, size: 40, color: Color(0xFF107C10)),
-            ),
-            const SizedBox(height: 16),
-            const Text('Native engine not available', style: TextStyle(color: Colors.white38)),
-            const SizedBox(height: 8),
-            const Text('(Build the NDK library to enable emulation)',
-              style: TextStyle(color: Colors.white24, fontSize: 12)),
+
+            // Touch controls
+            if (_isRunning && _showControls && !_isPaused)
+              const TouchControlsOverlay(),
+
+            // Metrics overlay
+            if (_isRunning && _showMetrics)
+              const Positioned(top: 12, left: 12, child: MetricsOverlay()),
+
+            // In-game menu
+            if (_showMenu)
+              _InGameMenu(
+                isPaused: _isPaused,
+                showControls: _showControls,
+                showMetrics: _showMetrics,
+                onPause: () { _toggleMenu(); _pauseEmulation(); },
+                onResume: () { _toggleMenu(); _resumeEmulation(); },
+                onToggleControls: () => setState(() => _showControls = !_showControls),
+                onToggleMetrics: () => setState(() => _showMetrics = !_showMetrics),
+                onGameSettings: () {
+                  _pauseEmulation();
+                  context.push('/game-settings/${widget.titleId}');
+                },
+                onControlsEditor: () {
+                  _pauseEmulation();
+                  context.push('/controls-editor');
+                },
+                onQuit: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('Quit Game?'),
+                      content: const Text('Unsaved progress will be lost.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                        TextButton(
+                          onPressed: () { Navigator.pop(context); context.pop(); },
+                          style: TextButton.styleFrom(foregroundColor: Colors.red),
+                          child: const Text('Quit'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildPauseOverlay() {
-    return Container(
-      color: Colors.black54,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.pause_circle, size: 72, color: Colors.white54),
-            const SizedBox(height: 16),
-            const Text('Paused', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 24),
-            ElevatedButton(onPressed: _resumeEmulation, child: const Text('Resume')),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMenu() {
-    return Container(
-      width: 200,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 16)],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _MenuItem(icon: Icons.pause, label: _paused ? 'Resume' : 'Pause',
-            onTap: () { setState(() => _showOverlay = false); _paused ? _resumeEmulation() : _pauseEmulation(); }),
-          _MenuItem(icon: Icons.bar_chart, label: _showMetrics ? 'Hide Metrics' : 'Show Metrics',
-            onTap: () => setState(() { _showMetrics = !_showMetrics; _showOverlay = false; })),
-          _MenuItem(icon: Icons.gamepad, label: 'Controls', onTap: () {
-            setState(() => _showOverlay = false);
-            context.push('/game/${widget.titleId}/controls');
-          }),
-          _MenuItem(icon: Icons.settings, label: 'Settings', onTap: () {
-            setState(() => _showOverlay = false);
-            context.push('/game/${widget.titleId}/settings');
-          }),
-          const Divider(height: 1, color: Colors.white10),
-          _MenuItem(
-            icon: Icons.stop_circle_outlined,
-            label: 'Stop & Exit',
-            color: Colors.redAccent,
-            onTap: () { _stopEmulation(); context.pop(); },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _onButton(int pad, int buttons) {
-    EngineBridge.setInputState(pad: pad, buttons: buttons);
-  }
-
-  void _onAxis(int pad, int lx, int ly, int rx, int ry) {
-    EngineBridge.setInputState(pad: pad, buttons: 0, lx: lx, ly: ly, rx: rx, ry: ry);
   }
 }
 
-class _MenuItem extends StatelessWidget {
+class _GameSurface extends StatelessWidget {
+  const _GameSurface();
+  @override
+  Widget build(BuildContext context) {
+    return const AndroidView(
+      viewType: 'xbox360recomp/game_surface',
+      layoutDirection: TextDirection.ltr,
+    );
+  }
+}
+
+class _InGameMenu extends StatelessWidget {
+  final bool isPaused, showControls, showMetrics;
+  final VoidCallback onPause, onResume, onToggleControls, onToggleMetrics;
+  final VoidCallback onGameSettings, onControlsEditor, onQuit;
+
+  const _InGameMenu({
+    required this.isPaused, required this.showControls, required this.showMetrics,
+    required this.onPause, required this.onResume, required this.onToggleControls,
+    required this.onToggleMetrics, required this.onGameSettings,
+    required this.onControlsEditor, required this.onQuit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 0, right: 0, bottom: 0,
+      child: Container(
+        width: 220,
+        color: Colors.black87,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Menu', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                const SizedBox(height: 16),
+                if (!isPaused)
+                  _MenuButton(icon: Icons.pause_rounded, label: 'Pause', onTap: onPause)
+                else
+                  _MenuButton(icon: Icons.play_arrow_rounded, label: 'Resume', color: AppTheme.xboxGreen, onTap: onResume),
+                const SizedBox(height: 8),
+                _MenuToggle(icon: Icons.gamepad_outlined, label: 'Touch Controls', value: showControls, onChanged: (_) => onToggleControls()),
+                _MenuToggle(icon: Icons.speed_outlined, label: 'FPS Overlay', value: showMetrics, onChanged: (_) => onToggleMetrics()),
+                const SizedBox(height: 8),
+                _MenuButton(icon: Icons.tune_rounded, label: 'Game Settings', onTap: onGameSettings),
+                _MenuButton(icon: Icons.gamepad_rounded, label: 'Edit Controls', onTap: onControlsEditor),
+                const Spacer(),
+                _MenuButton(icon: Icons.exit_to_app_rounded, label: 'Quit Game', color: Colors.red, onTap: onQuit),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
   final Color? color;
-
-  const _MenuItem({required this.icon, required this.label, required this.onTap, this.color});
+  final VoidCallback onTap;
+  const _MenuButton({required this.icon, required this.label, this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
-      leading: Icon(icon, size: 18, color: color ?? Colors.white70),
-      title: Text(label, style: TextStyle(fontSize: 14, color: color ?? Colors.white)),
+      leading: Icon(icon, color: color ?? Colors.white70, size: 20),
+      title: Text(label, style: TextStyle(color: color ?? Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
       onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
+}
+
+class _MenuToggle extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _MenuToggle({required this.icon, required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: Colors.white70, size: 20),
+      title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+      trailing: Switch(value: value, onChanged: onChanged),
+      onTap: () => onChanged(!value),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+}
+
+// Stub compute for bridge calls
+Future<R> compute<Q, R>(R Function(Q) callback, Q message) async {
+  return callback(message);
 }
