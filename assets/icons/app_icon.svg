@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1C1C1C"/>
+      <stop offset="100%" stop-color="#080808"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#107C10" stop-opacity="0.5"/>
+      <stop offset="70%" stop-color="#107C10" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#107C10" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="xgrad" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#6AD05C"/>
+      <stop offset="50%" stop-color="#52B043"/>
+      <stop offset="100%" stop-color="#107C10"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#52B043"/>
+      <stop offset="100%" stop-color="#107C10"/>
+    </linearGradient>
+    <filter id="xshadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#107C10" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glowblur">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <clipPath id="roundrect">
+      <rect width="512" height="512" rx="110" ry="110"/>
+    </clipPath>
+  </defs>
+
+  <!-- Rounded rect background -->
+  <rect width="512" height="512" rx="110" ry="110" fill="url(#bg)"/>
+
+  <!-- Glow blob -->
+  <ellipse cx="256" cy="260" rx="160" ry="150" fill="url(#glow)" filter="url(#glowblur)" clip-path="url(#roundrect)"/>
+
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="196" fill="none" stroke="url(#ring)" stroke-width="2.5" opacity="0.55"/>
+  <!-- Inner ring -->
+  <circle cx="256" cy="256" r="175" fill="none" stroke="#107C10" stroke-width="1" opacity="0.25"/>
+
+  <!-- Subtle circuit dots at compass points -->
+  <g fill="#52B043" opacity="0.4">
+    <circle cx="256" cy="54"  r="3.5"/>
+    <circle cx="256" cy="458" r="3.5"/>
+    <circle cx="54"  cy="256" r="3.5"/>
+    <circle cx="458" cy="256" r="3.5"/>
+    <circle cx="110" cy="110" r="2.5"/>
+    <circle cx="402" cy="110" r="2.5"/>
+    <circle cx="110" cy="402" r="2.5"/>
+    <circle cx="402" cy="402" r="2.5"/>
+  </g>
+  <!-- Circuit line segments -->
+  <g stroke="#52B043" stroke-width="1.5" opacity="0.2">
+    <line x1="256" y1="54"  x2="256" y2="90"/>
+    <line x1="256" y1="422" x2="256" y2="458"/>
+    <line x1="54"  y1="256" x2="90"  y2="256"/>
+    <line x1="422" y1="256" x2="458" y2="256"/>
+  </g>
+
+  <!-- The X — precise geometric shape -->
+  <g filter="url(#xshadow)">
+    <polygon
+      fill="url(#xgrad)"
+      points="
+        142,105
+        216,105  256,162  296,105
+        370,105
+        286,238
+        374,371
+        298,371  256,314  214,371
+        138,371
+        226,238
+      "
+    />
+  </g>
+
+  <!-- Highlight sheen on top of X -->
+  <polygon
+    fill="white" opacity="0.07"
+    points="142,105  190,105  230,168  216,105"
+  />
+  <polygon
+    fill="white" opacity="0.04"
+    points="296,105  370,105  308,192  296,105"
+  />
+
+  <!-- Small recomp indicator: "</>" symbol -->
+  <text
+    x="256" y="430"
+    font-family="'Courier New', monospace"
+    font-size="38"
+    font-weight="bold"
+    fill="#52B043"
+    opacity="0.65"
+    text-anchor="middle"
+    letter-spacing="3">&lt;/&gt;</text>
+
+  <!-- Bottom accent line -->
+  <rect x="190" y="446" width="144" height="2.5" rx="1.25" fill="#107C10" opacity="0.4"/>
+</svg>
