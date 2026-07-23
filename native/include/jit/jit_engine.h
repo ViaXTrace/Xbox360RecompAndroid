@@ -81,7 +81,7 @@ private:
 
     uint8_t* allocJitPage(size_t size);
     void     flushICache(uint8_t* start, size_t size);
-    // jitCompileBlock is a free function defined in arm64_backend.cpp
+    size_t jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes);
 
     // Guest memory
     uint8_t* m_guestMemory = nullptr;
