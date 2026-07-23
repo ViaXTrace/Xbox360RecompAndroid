@@ -48,7 +48,7 @@ dependencies:
   connectivity_plus: ^6.0.3
 
   # Gaming & input
-  gamepads: ^0.4.1
+  gamepads: ^0.1.7
 
   # System info
   device_info_plus: ^10.1.0
