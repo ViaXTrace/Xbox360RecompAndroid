@@ -32,6 +32,14 @@ static inline uint64_t guestRead64(const uint8_t* gm, uint64_t guestAddr, uint64
     return __builtin_bswap64(v);
 }
 
+// Forward declaration of XAM dispatch (defined in xam.cpp)
+namespace x360 { namespace hle {
+    void dispatchXamCall(HleKernel& kernel, uint32_t ordinal,
+                         ::x360::jit::PPCContext& ctx,
+                         uint8_t* gm, uint64_t gb);
+} }
+
+
 namespace x360 {
 namespace hle {
 
@@ -321,6 +329,8 @@ void HleKernel::dispatchKernelCall(const std::string& module, uint32_t ordinal,
             r[3] = 0;
             break;
         }
+    } else if (module == "xam.xex") {
+        dispatchXamCall(*this, ordinal, ctx, m_guestMemory, m_guestBase);
     }
 }
 

@@ -4,9 +4,16 @@
 #include <unordered_map>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <vector>
+#include <condition_variable>
 #include <functional>
 
 namespace x360 {
+
+// Forward declaration of PPCContext from jit namespace
+namespace jit { struct PPCContext; }
+
 namespace hle {
 
 // ─── Kernel Object Types ───────────────────────────────────────────────────────
@@ -68,13 +75,9 @@ public:
               const std::string& gameDir, const std::string& saveDir);
 
     // ── Memory ──────────────────────────────────────────────────────────────────
-    // NtAllocateVirtualMemory
     uint64_t allocVirtualMemory(uint64_t baseAddr, uint64_t size, uint32_t type, uint32_t protect);
-    // NtFreeVirtualMemory
     void freeVirtualMemory(uint64_t baseAddr);
-    // XMemAlloc
     uint64_t xMemAlloc(uint64_t size, uint64_t params);
-    // XMemFree
     void xMemFree(uint64_t baseAddr);
 
     // ── Threading ───────────────────────────────────────────────────────────────
@@ -105,20 +108,16 @@ public:
     // ── Input ───────────────────────────────────────────────────────────────────
     void setInputState(int pad, uint32_t buttons, int16_t lx, int16_t ly,
                        int16_t rx, int16_t ry, uint8_t lt, uint8_t rt);
-    uint32_t getInputState(int pad, void* outState); // returns XINPUT_GET_STATE result
+    uint32_t getInputState(int pad, void* outState);
 
-    // ── Kernel exports (called from JIT via HLE trampoline) ─────────────────────
-    // Dispatch a kernel call by module name + ordinal
+    // ── Kernel dispatch (called from JIT via HLE trampoline) ────────────────────
     void dispatchKernelCall(const std::string& module, uint32_t ordinal,
-                            struct PPCContext& ctx);
+                            jit::PPCContext& ctx);
 
     const std::string& lastError() const { return m_lastError; }
 
 private:
-    // Guest path → host path mapping
     std::string resolveGuestPath(const std::string& guestPath) const;
-
-    // Handle allocator
     uint32_t allocHandle();
     KernelObject* getObject(uint32_t handle);
     void destroyObject(uint32_t handle);
@@ -128,19 +127,16 @@ private:
     std::string m_gameDir;
     std::string m_saveDir;
 
-    // Object handle table
     std::unordered_map<uint32_t, std::unique_ptr<KernelObject>> m_objects;
     std::mutex m_objectMutex;
     uint32_t m_nextHandle = 0x0100;
 
-    // Path mappings (Xbox path prefix → host dir)
     std::unordered_map<std::string, std::string> m_pathMappings;
 
-    // XInput state (4 pads)
     struct XInputState {
-        uint32_t buttons;
-        int16_t lx, ly, rx, ry;
-        uint8_t lt, rt;
+        uint32_t buttons = 0;
+        int16_t lx = 0, ly = 0, rx = 0, ry = 0;
+        uint8_t lt = 0, rt = 0;
         std::mutex m;
     } m_inputState[4];
 

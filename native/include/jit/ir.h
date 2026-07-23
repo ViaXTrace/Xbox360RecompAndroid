@@ -6,11 +6,9 @@ namespace x360 {
 namespace jit {
 
 // ─── PowerPC → ARM64 IR (Intermediate Representation) ─────────────────────────
-// SSA-lite IR used as intermediate step between PPC decode and ARM64 codegen.
-// One IrInstr maps roughly to one PPC instruction; the optimizer fuses/eliminates.
 
 enum class IrOp {
-    // Integer arithmetic (register-register or register-immediate)
+    // Integer arithmetic
     Add, Sub, Mul, Div, And, Or, Xor, Nand, Nor, Eqv,
     Andc, Orc,
     ShiftL, ShiftR, ShiftRA, RotateL,
@@ -68,7 +66,7 @@ enum class IrOp {
     Sync, Isync, Eieio, Lwsync,
     // Load-link / store-conditional (LL/SC for atomics)
     Lwarx, Stwcx, Ldarx, Stdcx,
-    // HLE trampoline (calls into HLE kernel)
+    // HLE trampoline
     HleCall,
     // Nop / Unknown
     Nop, Unknown,
@@ -77,7 +75,7 @@ enum class IrOp {
 struct IrInstr {
     IrOp    op;
     int     rd;    // destination register (-1 = not used)
-    int     rs;    // source register (alias of rd for store instructions)
+    int     rs;    // source register (alias for store instructions)
     int     ra;    // operand A
     int     rb;    // operand B
     int     rc;    // operand C (VMX ternary)
@@ -92,16 +90,21 @@ struct IrInstr {
           imm(0), setRecord(false), link(false), update(false), guestPc(0) {}
 };
 
-// A basic block is a straight-line sequence of IR instructions ending in a branch.
+// A basic block: straight-line sequence of IR instructions ending in a branch.
 struct IrBlock {
-    uint64_t guestPcStart;
-    uint64_t guestPcEnd;      // PC of last instruction
+    uint64_t guestPcStart = 0;
+    uint64_t guestPcEnd   = 0;
     std::vector<IrInstr> instrs;
     bool endsWithReturn = false;
     bool endsWithBranch = false;
     uint64_t branchTarget = 0;
     uint64_t fallthrough  = 0;
 };
+
+// ─── IR builder (ir_builder.cpp) ───────────────────────────────────────────────
+// Build an IR basic block starting at guestPc from guest memory.
+IrBlock buildIrBlock(const uint8_t* guestMemory, uint64_t guestPc,
+                     uint64_t guestBase, uint64_t guestMemorySize);
 
 } // namespace jit
 } // namespace x360

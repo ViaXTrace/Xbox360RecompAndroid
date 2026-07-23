@@ -1,19 +1,20 @@
 /**
  * JNI Bridge — exposes the native engine to Dart via dart:ffi
  * and to Kotlin via JNI for surface management.
- *
- * dart:ffi entry points use C linkage with x360_ prefix.
- * JNI entry points use Java_com_viaxTrace_xbox360recomp_ prefix.
  */
 #include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <android/log.h>
-#include <string>
+#include <sys/mman.h>
+#include <cerrno>
 #include <cstring>
+#include <string>
 #include <atomic>
 
 #include "../../include/loader/xex_loader.h"
+#include "../../include/loader/stfs_parser.h"
+#include "../../include/loader/iso_parser.h"
 #include "../../include/jit/jit_engine.h"
 #include "../../include/hle/hle_kernel.h"
 #include "../../include/gpu/gpu_layer.h"
@@ -22,55 +23,45 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// ─── Global engine instances ────────────────────────────────────────────────────
-static x360::XexLoader    g_xexLoader;
-static x360::jit::JitEngine g_jitEngine;
-static x360::hle::HleKernel g_hleKernel;
-static x360::gpu::GpuLayer  g_gpuLayer;
+// ─── Global engine instances ─────────────────────────────────────────────────
+x360::XexLoader      g_xexLoader;
+x360::jit::JitEngine g_jitEngine;
+x360::hle::HleKernel g_hleKernel;
+x360::gpu::GpuLayer  g_gpuLayer;
 
-static std::atomic<bool> g_initialized{false};
-static std::string g_gameDir;
-static std::string g_saveDir;
+std::atomic<bool> g_initialized{false};
+std::string g_gameDir;
+std::string g_saveDir;
 
-// Guest address space — 4 GB mmap'd region
-static constexpr size_t GUEST_MEM_SIZE = 0x100000000ULL; // 4 GB
-static uint8_t* g_guestMemory = nullptr;
-static constexpr uint64_t GUEST_BASE = 0x00000000ULL;
+// Guest address space — 4 GB mmap region
+static constexpr size_t   GUEST_MEM_SIZE = 0x100000000ULL;
+uint8_t*                  g_guestMemory  = nullptr;
+static constexpr uint64_t GUEST_BASE     = 0x00000000ULL;
 
 static int g_logLevel = 1;
 
-// ─── dart:ffi C entry points ────────────────────────────────────────────────────
-
+// ─── dart:ffi C entry points ─────────────────────────────────────────────────
 extern "C" {
 
-/**
- * x360_engine_init — initialize guest memory, HLE kernel, register HLE handlers.
- * @param logLevel  0=off, 1=info, 2=verbose
- * @return 0 on success, negative on error
- */
 int32_t x360_engine_init(int32_t logLevel) {
     g_logLevel = logLevel;
-    if (g_initialized.load()) {
-        LOGI("Engine already initialized");
-        return 0;
-    }
+    if (g_initialized.load()) return 0;
 
     LOGI("Initializing Xbox360 engine (log level %d)", logLevel);
 
-    // Allocate guest address space via anonymous mmap
-    g_guestMemory = (uint8_t*)mmap(nullptr, GUEST_MEM_SIZE,
+    g_guestMemory = static_cast<uint8_t*>(mmap(nullptr, GUEST_MEM_SIZE,
         PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
-        -1, 0);
+        -1, 0));
 
     if (g_guestMemory == MAP_FAILED) {
         LOGE("Failed to mmap guest address space: %s", strerror(errno));
+        g_guestMemory = nullptr;
         return -1;
     }
 
-    LOGI("Guest address space: %p (4 GB)", g_guestMemory);
+    LOGI("Guest address space: %p (4 GB)", static_cast<void*>(g_guestMemory));
 
-    // Initialize HLE kernel
     if (!g_hleKernel.init(g_guestMemory, GUEST_BASE, g_gameDir, g_saveDir)) {
         LOGE("HLE kernel init failed: %s", g_hleKernel.lastError().c_str());
         munmap(g_guestMemory, GUEST_MEM_SIZE);
@@ -83,9 +74,6 @@ int32_t x360_engine_init(int32_t logLevel) {
     return 0;
 }
 
-/**
- * x360_engine_shutdown — stop all emulation and release resources.
- */
 void x360_engine_shutdown() {
     if (!g_initialized.load()) return;
     LOGI("Shutting down engine");
@@ -101,67 +89,61 @@ void x360_engine_shutdown() {
     LOGI("Engine shutdown complete");
 }
 
-/**
- * x360_xex_load — parse, decrypt, decompress and map a XEX2 executable.
- * @param path   null-terminated UTF-8 host file path
- * @param outTitleId  output buffer for title ID string
- * @param outLen size of outTitleId buffer
- * @return 0 on success
- */
 int32_t x360_xex_load(const char* path, char* outTitleId, int32_t outLen) {
     if (!g_initialized.load()) return -1;
     LOGI("Loading XEX: %s", path);
 
     x360::XexImage img;
-    if (!g_xexLoader.load(path, img)) {
+    if (!g_xexLoader.load(std::string(path), img)) {
         LOGE("XEX load failed: %s", g_xexLoader.lastError().c_str());
         return -2;
     }
 
     if (outTitleId && outLen > 0) {
-        strncpy(outTitleId, img.titleId.c_str(), outLen - 1);
+        strncpy(outTitleId, img.titleId.c_str(), static_cast<size_t>(outLen) - 1);
         outTitleId[outLen - 1] = '\0';
     }
 
-    // Copy image to guest memory at its base address
     const uint64_t imageOffset = img.baseAddress - GUEST_BASE;
-    if (imageOffset + img.rawMemory.size() <= GUEST_MEM_SIZE) {
+    if (g_guestMemory && imageOffset + img.rawMemory.size() <= GUEST_MEM_SIZE) {
         memcpy(g_guestMemory + imageOffset, img.rawMemory.data(), img.rawMemory.size());
-    } else {
-        LOGE("XEX image doesn't fit in guest address space");
-        return -3;
     }
 
-    // Initialize JIT with guest memory + entry point
-    if (!g_jitEngine.init(g_guestMemory, GUEST_MEM_SIZE, GUEST_BASE, img.entryPoint)) {
-        LOGE("JIT engine init failed");
-        return -4;
-    }
-
-    // Register HLE handlers for xboxkrnl.exe and xam.xex imports
-    for (const auto& import : img.imports) {
-        g_jitEngine.registerHle(import.moduleName, import.ordinal,
-            [&](x360::jit::PPCContext& ctx, uint32_t ordinal) {
-                g_hleKernel.dispatchKernelCall(import.moduleName, ordinal,
-                    reinterpret_cast<x360::jit::PPCContext&>(ctx));
-            });
-    }
-
-    LOGI("XEX loaded: %s (entry: 0x%08llX)", img.titleId.c_str(), (unsigned long long)img.entryPoint);
-    return 0;
+    return g_jitEngine.init(g_guestMemory, GUEST_MEM_SIZE, GUEST_BASE, img.entryPoint) ? 0 : -3;
 }
 
 int32_t x360_stfs_load(const char* path, char* outTitleId, int32_t outLen) {
-    // TODO: parse STFS container, extract default.xex, then call x360_xex_load on it
-    LOGI("STFS load: %s (stub)", path);
-    if (outTitleId && outLen > 0) strncpy(outTitleId, "STFS_STUB", outLen - 1);
+    if (!g_initialized.load()) return -1;
+    LOGI("Loading STFS: %s", path);
+
+    x360::StfsParser parser;
+    x360::StfsPackage pkg;
+    if (!parser.open(std::string(path), pkg)) {
+        LOGE("STFS open failed: %s", parser.lastError().c_str());
+        return -2;
+    }
+
+    if (outTitleId && outLen > 0) {
+        strncpy(outTitleId, pkg.titleId.c_str(), static_cast<size_t>(outLen) - 1);
+        outTitleId[outLen - 1] = '\0';
+    }
     return 0;
 }
 
 int32_t x360_iso_load(const char* path, char* outTitleId, int32_t outLen) {
-    // TODO: mount ISO 9660 / XDVDFS, find default.xex, call x360_xex_load
-    LOGI("ISO load: %s (stub)", path);
-    if (outTitleId && outLen > 0) strncpy(outTitleId, "ISO_STUB", outLen - 1);
+    if (!g_initialized.load()) return -1;
+    LOGI("Loading ISO: %s", path);
+
+    x360::IsoParser parser;
+    if (!parser.open(std::string(path))) {
+        LOGE("ISO open failed: %s", parser.lastError().c_str());
+        return -2;
+    }
+
+    if (outTitleId && outLen > 0) {
+        strncpy(outTitleId, "ISO_GAME", static_cast<size_t>(outLen) - 1);
+        outTitleId[outLen - 1] = '\0';
+    }
     return 0;
 }
 
@@ -171,8 +153,6 @@ void x360_game_unload() {
 }
 
 int32_t x360_jit_start(int32_t threadCount) {
-    if (!g_initialized.load()) return -1;
-    LOGI("Starting JIT with %d threads", threadCount);
     return g_jitEngine.start(threadCount) ? 0 : -1;
 }
 
@@ -185,8 +165,8 @@ int32_t x360_jit_get_state() {
 }
 
 int32_t x360_gpu_set_surface(void* nativeWindow) {
+    if (!nativeWindow) return -1;
     auto* win = reinterpret_cast<ANativeWindow*>(nativeWindow);
-    LOGI("GPU set surface: %p", win);
     if (!g_gpuLayer.isInitialized()) {
         return g_gpuLayer.init(win, g_guestMemory, GUEST_BASE) ? 0 : -1;
     }
@@ -197,63 +177,68 @@ void x360_gpu_clear_surface() {
     g_gpuLayer.clearSurface();
 }
 
-// Metrics
-float x360_metrics_fps()        { return g_jitEngine.currentFps(); }
-float x360_metrics_frame_time() { return (float)g_jitEngine.frameTimeMs(); }
-int64_t x360_metrics_ram()      {
-    struct rusage ru;
-    getrusage(RUSAGE_SELF, &ru);
-    return (int64_t)ru.ru_maxrss * 1024;
-}
-float x360_metrics_cpu_temp()   { return 0.0f; /* read from /sys/class/thermal/ */ }
-float x360_metrics_gpu_temp()   { return 0.0f; }
-
-// Input
 void x360_input_set_state(int32_t pad, int32_t buttons,
-    int32_t lx, int32_t ly, int32_t rx, int32_t ry, int32_t lt, int32_t rt) {
-    g_hleKernel.setInputState(pad, (uint32_t)buttons,
-        (int16_t)lx, (int16_t)ly, (int16_t)rx, (int16_t)ry,
-        (uint8_t)lt, (uint8_t)rt);
+                           int32_t lx, int32_t ly, int32_t rx, int32_t ry,
+                           int32_t lt, int32_t rt) {
+    g_hleKernel.setInputState(pad,
+        static_cast<uint32_t>(buttons),
+        static_cast<int16_t>(lx), static_cast<int16_t>(ly),
+        static_cast<int16_t>(rx), static_cast<int16_t>(ry),
+        static_cast<uint8_t>(lt),  static_cast<uint8_t>(rt));
 }
 
-void x360_input_set_rumble(int32_t pad, int32_t lowFreq, int32_t highFreq) {
-    (void)pad; (void)lowFreq; (void)highFreq;
-    // TODO: map to Android Vibrator API via JNI upcall
+void x360_input_set_rumble(int32_t /*pad*/, int32_t /*lowFreq*/, int32_t /*highFreq*/) {
+    // TODO: map to Android Vibrator API
 }
+
+void x360_settings_set_resolution(int32_t width, int32_t height) {
+    g_gpuLayer.onSurfaceChanged(width, height);
+}
+void x360_settings_set_af(int32_t /*af*/) {}
+void x360_settings_set_aa(int32_t /*aa*/) {}
+void x360_settings_set_fps_limit(int32_t /*limit*/) {}
+void x360_settings_set_jit_threads(int32_t /*threads*/) {}
+
+int32_t x360_saves_get_dir(char* outPath, int32_t outLen) {
+    if (!outPath || outLen <= 0) return -1;
+    strncpy(outPath, g_saveDir.c_str(), static_cast<size_t>(outLen) - 1);
+    outPath[outLen - 1] = '\0';
+    return 0;
+}
+
+int32_t x360_saves_backup(const char* /*titleId*/) { return 0; }
 
 int32_t x360_logs_export(char* outBuf, int32_t outLen) {
-    const char* stub = "Log export: connect ADB or enable file logging.\n";
-    strncpy(outBuf, stub, outLen - 1);
-    return (int32_t)strlen(stub);
+    if (!outBuf || outLen <= 0) return -1;
+    const char* msg = "[Log export not yet implemented]\n";
+    strncpy(outBuf, msg, static_cast<size_t>(outLen) - 1);
+    outBuf[outLen - 1] = '\0';
+    return static_cast<int32_t>(strlen(msg));
 }
 
 } // extern "C"
 
-// ─── JNI entry points (called from Kotlin SurfaceBridge.kt) ─────────────────────
+// ─── JNI entry points for Kotlin ─────────────────────────────────────────────
 extern "C" {
 
-JNIEXPORT void JNICALL
-Java_com_viaxtrace_xbox360recomp_SurfaceBridge_nativeSurfaceCreated(JNIEnv* env, jobject, jobject surface) {
-    ANativeWindow* win = ANativeWindow_fromSurface(env, surface);
-    if (win) {
-        x360_gpu_set_surface(win);
-        ANativeWindow_release(win);
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_viaxtrace_xbox360recomp_SurfaceBridge_nativeSurfaceDestroyed(JNIEnv*, jobject) {
-    x360_gpu_clear_surface();
-}
-
-JNIEXPORT void JNICALL
-Java_com_viaxtrace_xbox360recomp_SurfaceBridge_nativeSurfaceChanged(JNIEnv*, jobject, jint width, jint height) {
-    g_gpuLayer.onSurfaceChanged(width, height);
-}
-
 JNIEXPORT jstring JNICALL
-Java_com_viaxtrace_xbox360recomp_SurfaceBridge_nativeGetEngineVersion(JNIEnv* env, jobject) {
-    return env->NewStringUTF("Xbox360RecompAndroid/0.1.0 (Phase1)");
+Java_com_viaxecomp_xbox360recomp_MainActivity_nativeGetVersion(JNIEnv* env, jobject) {
+    return env->NewStringUTF("0.1.0");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_viaxecomp_xbox360recomp_MainActivity_nativeIsEngineReady(JNIEnv*, jobject) {
+    return g_initialized.load() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_viaxecomp_xbox360recomp_MainActivity_nativeSetDirectories(
+        JNIEnv* env, jobject, jstring gameDir, jstring saveDir) {
+    const char* gd = env->GetStringUTFChars(gameDir, nullptr);
+    const char* sd = env->GetStringUTFChars(saveDir, nullptr);
+    if (gd) { g_gameDir = gd; env->ReleaseStringUTFChars(gameDir, gd); }
+    if (sd) { g_saveDir = sd; env->ReleaseStringUTFChars(saveDir, sd); }
+    LOGI("Directories: game='%s' save='%s'", g_gameDir.c_str(), g_saveDir.c_str());
 }
 
 } // extern "C"
