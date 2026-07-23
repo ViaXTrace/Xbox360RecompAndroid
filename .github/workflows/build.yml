@@ -52,17 +52,30 @@ jobs:
         with:
           cmake-version: '3.22.x'
 
+      - name: Generate app icons from SVG
+        run: |
+          sudo apt-get install -y librsvg2-bin 2>/dev/null || true
+          if command -v rsvg-convert &>/dev/null && [ -f assets/icons/app_icon.svg ]; then
+            for density in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+              name="${density%%:*}"
+              size="${density##*:}"
+              rsvg-convert -w $size -h $size assets/icons/app_icon.svg \
+                -o android/app/src/main/res/mipmap-${name}/ic_launcher.png
+              echo "Generated mipmap-${name}/ic_launcher.png (${size}px)"
+            done
+          else
+            echo "rsvg-convert not available or SVG not found, keeping existing icons"
+          fi
+
       - name: Generate android/local.properties
         run: |
+          FLUTTER_SDK_PATH=$(dirname $(dirname $(which flutter)))
           cat > android/local.properties <<EOF
           sdk.dir=$ANDROID_SDK_ROOT
-          flutter.sdk=$(flutter --version 2>/dev/null; which flutter | xargs readlink -f | sed 's|/bin/flutter||')
+          flutter.sdk=$FLUTTER_SDK_PATH
           flutter.versionCode=1
           flutter.versionName=0.1.0
           EOF
-          # Use Flutter SDK path from the action
-          FLUTTER_SDK_PATH=$(dirname $(dirname $(which flutter)))
-          sed -i "s|flutter.sdk=.*|flutter.sdk=$FLUTTER_SDK_PATH|" android/local.properties
           echo "--- local.properties ---"
           cat android/local.properties
 
@@ -148,8 +161,10 @@ jobs:
                dist/Xbox360RecompAndroid-${{ github.ref_name }}-arm64.apk
           else
             cp build/app/outputs/flutter-apk/app-debug.apk \
-               dist/Xbox360RecompAndroid-${{ github.sha }}-debug.apk || true
+               dist/Xbox360RecompAndroid-dev${{ github.run_number }}-debug-arm64.apk
           fi
+          echo "--- dist contents ---"
+          ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -157,6 +172,31 @@ jobs:
           name: apk-${{ github.sha }}
           path: dist/*.apk
           retention-days: 30
+
+      - name: Create dev pre-release (main branch builds)
+        if: "github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: "🔧 Dev Build #${{ github.run_number }}"
+          prerelease: true
+          make_latest: false
+          files: dist/*.apk
+          body: |
+            ## 🔧 Automated Dev Build
+
+            **Build:** #${{ github.run_number }}
+            **Commit:** [`${{ github.sha }}`](https://github.com/ViaXTrace/Xbox360RecompAndroid/commit/${{ github.sha }})
+            **Branch:** `main`
+            **Date:** ${{ github.event.head_commit.timestamp }}
+
+            This is an **unstable debug build** generated automatically from the latest commit on `main`.
+            Use [official releases](https://github.com/ViaXTrace/Xbox360RecompAndroid/releases?q=v&expanded=true) for stable versions.
+
+            ### What's in this build
+            ${{ github.event.head_commit.message }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-release:
     name: Create GitHub Release
@@ -181,7 +221,7 @@ jobs:
         id: changelog
         run: |
           TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "$TAG" | tail -1)
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^dev-" | grep -A1 "$TAG" | tail -1)
           echo "## Changes in $TAG" > changelog.md
           if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$TAG" ]; then
             git log ${PREV_TAG}..${TAG} --pretty=format:"- %s (%h)" >> changelog.md
@@ -197,6 +237,7 @@ jobs:
           body_path: changelog.md
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          make_latest: true
           files: dist/*.apk
           generate_release_notes: true
         env:
