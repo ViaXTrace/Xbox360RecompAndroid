@@ -1,4 +1,5 @@
 #pragma once
+#define VK_USE_PLATFORM_ANDROID_KHR   // Must precede vulkan.h to expose Android surface types
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -18,37 +19,42 @@ enum class Pm4PacketType : uint8_t {
     Type3 = 3,  // standard Xenos commands
 };
 
+// PM4 Type-3 opcodes used by the Xenos GPU.
+// Values from ATI R200 PM4 spec and cross-referenced with Xenia (MIT).
+// NOTE: EndOfFrame/swap is signalled via EventWriteEop (0x26) — there is
+//       no separate dedicated "Swap" opcode on Xenos. The previous
+//       Swap = 0x36 alias was removed: it collided with DrawIndx2 = 0x36
+//       causing a duplicate-case compiler error.
 enum class Pm4OpCode : uint32_t {
-    DrawIndx          = 0x2D,
-    DrawIndx2         = 0x36,
+    DrawIndx           = 0x2D,   // Indexed draw (vtx count + VGT initiator)
+    DrawIndx2          = 0x36,   // Draw with inline index data
     DrawAutoVisibility = 0x34,
-    SetConstant       = 0x2B,
-    SetConstantF      = 0x39,
-    SetShaderConstants = 0x12,
-    SetBin            = 0x1F,
-    IndirectBuffer    = 0x3F,
-    NopPacket         = 0x10,
-    LoadState         = 0x30,
-    EventWriteEop     = 0x26,
-    EventWriteZpd     = 0x38,
-    Swap              = 0x36,
+    SetConstant        = 0x2B,   // Write GPU register constant (integer bank)
+    SetConstantF       = 0x39,   // Write GPU register constant (float bank)
+    SetShaderConstants = 0x12,   // Upload shader microcode + SQ_PROGRAM_CNTL
+    SetBin             = 0x1F,
+    IndirectBuffer     = 0x3F,   // Nested ring-buffer
+    NopPacket          = 0x10,
+    LoadState          = 0x30,   // Load GPU state block from memory
+    EventWriteEop      = 0x26,   // Write event + optional EOP; triggers swap/present
+    EventWriteZpd      = 0x38,
 };
 
 // Xenos register set (partial — key GPU state)
 struct XenosGpuRegisters {
-    uint32_t rbSurfaceInfo;    // Render target surface info
-    uint32_t rbColorInfo;      // Color render target
+    uint32_t rbSurfaceInfo;
+    uint32_t rbColorInfo;
     uint32_t rbColor1Info;
     uint32_t rbColor2Info;
     uint32_t rbColor3Info;
     uint32_t rbDepthInfo;
     uint32_t rbColorMask;
     uint32_t rbBlendControl[4];
-    uint32_t paClVteCntl;      // Clip control / viewport transform
+    uint32_t paClVteCntl;
     uint32_t paScWindowOffset;
     uint32_t paScWindowScissorTl;
     uint32_t paScWindowScissorBr;
-    uint32_t sqProgramCntl;    // Active shader program selectors
+    uint32_t sqProgramCntl;
     uint32_t sqVsConstantCf;
     uint32_t sqPsConstantCf;
     uint32_t vgtDrawInitiator;
@@ -64,56 +70,40 @@ struct XenosGpuRegisters {
     float    viewportZscale, viewportZoffset;
 };
 
-// Compiled shader cache entry
 struct ShaderEntry {
-    uint64_t microCodeHash;     // Hash of Xenos shader microcode
-    VkShaderModule vkModule;    // Compiled Vulkan shader module
-    std::vector<uint8_t> spirv; // SPIR-V bytecode
+    uint64_t microCodeHash;
+    VkShaderModule vkModule;
+    std::vector<uint8_t> spirv;
     bool isVertex;
 };
 
-// Texture cache entry
 struct TextureEntry {
     uint64_t guestAddr;
     uint32_t width, height;
-    uint32_t format;    // Xenos texture format
+    uint32_t format;
     VkImage  image;
     VkImageView view;
     VkDeviceMemory memory;
-    bool isTiled;       // Xenos tiled layout?
+    bool isTiled;
 };
 
-// GPU layer state machine
 class GpuLayer {
 public:
     GpuLayer();
     ~GpuLayer();
 
-    // Initialize Vulkan + window surface
     bool init(ANativeWindow* window, uint8_t* guestMemory, uint64_t guestBase);
-
-    // Set a new Android surface (on resume / surface change)
     bool setSurface(ANativeWindow* window);
     void clearSurface();
-
-    // Main ring buffer processing — call from the GPU thread
     void processPm4RingBuffer(const uint32_t* ringBuf, uint32_t sizeWords);
-
-    // Called by HLE on VBlank / swap — present the frame
     void presentFrame();
-
-    // Resize viewport
     void onSurfaceChanged(int width, int height);
-
     bool isInitialized() const { return m_initialized; }
     float currentFps() const;
-
-    // Driver loading (AdrenoTools / ExynosTools)
     bool loadCustomDriver(const std::string& driverPath);
     bool loadTurnipDriver();
 
 private:
-    // ── Vulkan init ────────────────────────────────────────────────────────────
     bool createInstance();
     bool selectPhysicalDevice();
     bool createLogicalDevice();
@@ -123,65 +113,52 @@ private:
     bool createCommandPool();
     bool createSyncObjects();
 
-    // ── PM4 dispatch ──────────────────────────────────────────────────────────
     void dispatchType3(Pm4OpCode op, const uint32_t* params, uint32_t count);
     void handleDrawIndx(const uint32_t* params);
     void handleSetConstant(const uint32_t* params, uint32_t count);
     void handleSwap();
     void handleIndirectBuffer(uint32_t ptr, uint32_t size);
 
-    // ── Shader recompiler ─────────────────────────────────────────────────────
     ShaderEntry* getOrCompileShader(const uint8_t* microcode, uint32_t size, bool isVertex);
     bool decompileMicrocode(const uint8_t* mc, uint32_t size, bool isVertex,
                             std::vector<uint8_t>& outSpirv);
 
-    // ── Texture management ─────────────────────────────────────────────────────
     TextureEntry* getOrUploadTexture(uint64_t guestAddr, uint32_t width,
                                      uint32_t height, uint32_t format);
     void detileTexture(const uint8_t* src, uint8_t* dst, uint32_t width,
                        uint32_t height, uint32_t format);
     bool transcodeBcToAstc(const uint8_t* src, uint8_t* dst,
                            uint32_t width, uint32_t height, uint32_t format);
-
-    // ── eDRAM simulation ───────────────────────────────────────────────────────
     void resolveEdram();
 
-    // Vulkan handles
-    VkInstance       m_instance = VK_NULL_HANDLE;
-    VkPhysicalDevice m_physDevice = VK_NULL_HANDLE;
-    VkDevice         m_device = VK_NULL_HANDLE;
+    VkInstance       m_instance      = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physDevice    = VK_NULL_HANDLE;
+    VkDevice         m_device        = VK_NULL_HANDLE;
     VkQueue          m_graphicsQueue = VK_NULL_HANDLE;
-    VkSurfaceKHR     m_surface = VK_NULL_HANDLE;
-    VkSwapchainKHR   m_swapchain = VK_NULL_HANDLE;
-    VkRenderPass     m_renderPass = VK_NULL_HANDLE;
-    VkCommandPool    m_cmdPool = VK_NULL_HANDLE;
-    std::vector<VkImage>       m_swapImages;
-    std::vector<VkImageView>   m_swapViews;
-    std::vector<VkFramebuffer> m_framebuffers;
+    VkSurfaceKHR     m_surface       = VK_NULL_HANDLE;
+    VkSwapchainKHR   m_swapchain     = VK_NULL_HANDLE;
+    VkRenderPass     m_renderPass    = VK_NULL_HANDLE;
+    VkCommandPool    m_cmdPool       = VK_NULL_HANDLE;
+    std::vector<VkImage>         m_swapImages;
+    std::vector<VkImageView>     m_swapViews;
+    std::vector<VkFramebuffer>   m_framebuffers;
     std::vector<VkCommandBuffer> m_cmdBuffers;
-    VkSemaphore m_imageAvailSem = VK_NULL_HANDLE;
-    VkSemaphore m_renderDoneSem = VK_NULL_HANDLE;
-    VkFence     m_inFlightFence = VK_NULL_HANDLE;
+    VkSemaphore m_imageAvailSem  = VK_NULL_HANDLE;
+    VkSemaphore m_renderDoneSem  = VK_NULL_HANDLE;
+    VkFence     m_inFlightFence  = VK_NULL_HANDLE;
     uint32_t    m_graphicsQueueFamily = 0;
     VkExtent2D  m_swapExtent{};
 
-    // Guest memory
     uint8_t*  m_guestMemory = nullptr;
-    uint64_t  m_guestBase = 0;
-
-    // GPU register state
+    uint64_t  m_guestBase   = 0;
     XenosGpuRegisters m_regs{};
-
-    // Caches
     std::unordered_map<uint64_t, ShaderEntry>  m_shaderCache;
     std::unordered_map<uint64_t, TextureEntry> m_textureCache;
 
-    // Frame timing
     uint64_t m_lastFrameNs = 0;
-    float    m_fps = 0.0f;
-    uint32_t m_frameCount = 0;
-
-    bool m_initialized = false;
+    float    m_fps         = 0.0f;
+    uint32_t m_frameCount  = 0;
+    bool     m_initialized = false;
     ANativeWindow* m_window = nullptr;
 };
 
