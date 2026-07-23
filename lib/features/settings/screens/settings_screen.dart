@@ -75,7 +75,7 @@ class _Section extends StatelessWidget {
               for (int i = 0; i < children.length; i++) ...[
                 children[i],
                 if (i < children.length - 1)
-                  const Divider(height: 1, indent: 56, endIndent: 0, color: Colors.white.withOpacity(0.08)),
+                  const Divider(height: 1, indent: 56, endIndent: 0, color: const Color(0x14FFFFFF)),
               ],
             ],
           ),
@@ -99,7 +99,7 @@ class _SettingTile extends StatelessWidget {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: const Color(0x14FFFFFF), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, size: 18, color: Colors.white70),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white)),

@@ -222,16 +222,3 @@ class EngineBridge {
   static double getCpuTemp() => _initialized ? _metricsGetCpuTemp() : 0.0;
   static double getGpuTemp() => _initialized ? _metricsGetGpuTemp() : 0.0;
 }
-
-/// Allocate native UTF-8 string
-extension StringExtNative on String {
-  Pointer<Utf8> toNativeUtf8() {
-    final units = codeUnits;
-    final buf = calloc<Uint8>(units.length + 1);
-    for (var i = 0; i < units.length; i++) {
-      buf[i] = units[i];
-    }
-    buf[units.length] = 0;
-    return buf.cast<Utf8>();
-  }
-}

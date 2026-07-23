@@ -26,7 +26,7 @@ class GameCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF252525),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: const Color(0x14FFFFFF)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -77,7 +77,7 @@ class GameCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF252525),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: const Color(0x14FFFFFF)),
         ),
         child: Row(
           children: [
@@ -138,7 +138,7 @@ class GameCard extends StatelessWidget {
           Icon(
             Icons.sports_esports,
             size: 40,
-            color: Colors.white.withOpacity(0.08),
+            color: const Color(0x14FFFFFF),
           ),
           Positioned(
             bottom: 8,
