@@ -1,67 +1,29 @@
 import 'package:flutter/material.dart';
+import '../../../core/native/engine_bridge.dart';
+import '../../../core/theme/app_theme.dart';
 
-/// XInput button bitmask constants (matches Xbox 360 XInput spec)
-class XButton {
-  static const dpadUp = 0x0001;
-  static const dpadDown = 0x0002;
-  static const dpadLeft = 0x0004;
-  static const dpadRight = 0x0008;
-  static const start = 0x0010;
-  static const back = 0x0020;
-  static const ls = 0x0040;
-  static const rs = 0x0080;
-  static const lb = 0x0100;
-  static const rb = 0x0200;
-  static const a = 0x1000;
-  static const b = 0x2000;
-  static const x = 0x4000;
-  static const y = 0x8000;
-}
-
-typedef ButtonCallback = void Function(int pad, int buttons);
-typedef AxisCallback = void Function(int pad, int lx, int ly, int rx, int ry);
-
+/// Full Xbox 360 touch controller overlay.
+/// Button IDs map to XInput bitmask values.
 class TouchControlsOverlay extends StatefulWidget {
-  final ButtonCallback onButtonPressed;
-  final AxisCallback onAxisChanged;
-
-  const TouchControlsOverlay({
-    super.key,
-    required this.onButtonPressed,
-    required this.onAxisChanged,
-  });
-
+  const TouchControlsOverlay({super.key});
   @override
   State<TouchControlsOverlay> createState() => _TouchControlsOverlayState();
 }
 
 class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
-  int _buttons = 0;
-  Offset _leftStick = Offset.zero;
-  Offset _rightStick = Offset.zero;
+  double _lsX = 0, _lsY = 0;
+  double _rsX = 0, _rsY = 0;
+  double _ltValue = 0, _rtValue = 0;
 
-  void _pressButton(int btn) {
-    _buttons |= btn;
-    widget.onButtonPressed(0, _buttons);
+  void _press(int btn) => EngineBridge.instance.buttonDown(btn);
+  void _release(int btn) => EngineBridge.instance.buttonUp(btn);
+  void _setLeftStick(double x, double y) {
+    setState(() { _lsX = x; _lsY = y; });
+    EngineBridge.instance.setAxis(0, x, y);
   }
-
-  void _releaseButton(int btn) {
-    _buttons &= ~btn;
-    widget.onButtonPressed(0, _buttons);
-  }
-
-  void _updateLeftStick(Offset o) {
-    _leftStick = o;
-    widget.onAxisChanged(0,
-      (_leftStick.dx * 32767).toInt(), (_leftStick.dy * 32767).toInt(),
-      (_rightStick.dx * 32767).toInt(), (_rightStick.dy * 32767).toInt());
-  }
-
-  void _updateRightStick(Offset o) {
-    _rightStick = o;
-    widget.onAxisChanged(0,
-      (_leftStick.dx * 32767).toInt(), (_leftStick.dy * 32767).toInt(),
-      (_rightStick.dx * 32767).toInt(), (_rightStick.dy * 32767).toInt());
+  void _setRightStick(double x, double y) {
+    setState(() { _rsX = x; _rsY = y; });
+    EngineBridge.instance.setAxis(1, x, y);
   }
 
   @override
@@ -69,62 +31,66 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
     final size = MediaQuery.of(context).size;
     return Stack(
       children: [
-        // Left analog stick
+        // ─ Left thumbstick ──────────────────────────
         Positioned(
-          left: 40, bottom: 60,
-          child: _AnalogStick(
-            radius: 50,
-            onChanged: _updateLeftStick,
-          ),
+          left: 30, bottom: 90,
+          child: _Thumbstick(x: _lsX, y: _lsY, onMove: _setLeftStick, label: 'LS'),
         ),
-        // Right analog stick
+        // ─ D-Pad ─────────────────────────────────────
         Positioned(
-          right: 140, bottom: 40,
-          child: _AnalogStick(
-            radius: 50,
-            onChanged: _updateRightStick,
-          ),
+          left: 155, bottom: 50,
+          child: _DPad(onPress: _press, onRelease: _release),
         ),
-        // D-Pad
+        // ─ Left shoulder / trigger ───────────────────
         Positioned(
-          left: 16, bottom: 160,
-          child: _DPad(onPress: _pressButton, onRelease: _releaseButton),
+          left: 24, top: 14,
+          child: Column(spacing: 6, children: [
+            _TriggerButton(
+              label: 'LT',
+              value: _ltValue,
+              onDrag: (v) {
+                setState(() => _ltValue = v);
+                EngineBridge.instance.setTrigger(0, v);
+              },
+            ),
+            _ShoulderButton(label: 'LB', onPress: () => _press(0x0100), onRelease: () => _release(0x0100)),
+          ]),
         ),
-        // ABXY buttons
+        // ─ Right shoulder / trigger ──────────────────
         Positioned(
-          right: 16, bottom: 80,
-          child: _ABXYCluster(onPress: _pressButton, onRelease: _releaseButton),
+          right: 24, top: 14,
+          child: Column(spacing: 6, children: [
+            _TriggerButton(
+              label: 'RT',
+              value: _rtValue,
+              onDrag: (v) {
+                setState(() => _rtValue = v);
+                EngineBridge.instance.setTrigger(1, v);
+              },
+            ),
+            _ShoulderButton(label: 'RB', onPress: () => _press(0x0200), onRelease: () => _release(0x0200)),
+          ]),
         ),
-        // LB / LT
+        // ─ ABXY buttons ──────────────────────────────
         Positioned(
-          left: 16, top: 16,
+          right: 30, bottom: 60,
+          child: _ABXYCluster(onPress: _press, onRelease: _release),
+        ),
+        // ─ Right thumbstick ──────────────────────────
+        Positioned(
+          right: 160, bottom: 90,
+          child: _Thumbstick(x: _rsX, y: _rsY, onMove: _setRightStick, label: 'RS'),
+        ),
+        // ─ Start / Back / Guide ──────────────────────
+        Positioned(
+          left: size.width / 2 - 90, bottom: 24,
           child: Row(
             children: [
-              _ShoulderButton(label: 'LB', onPress: () => _pressButton(XButton.lb), onRelease: () => _releaseButton(XButton.lb)),
-              const SizedBox(width: 8),
-              _ShoulderButton(label: 'LT', onPress: () => _pressButton(0x01000000), onRelease: () => _releaseButton(0x01000000)),
-            ],
-          ),
-        ),
-        // RB / RT
-        Positioned(
-          right: 16, top: 16,
-          child: Row(
-            children: [
-              _ShoulderButton(label: 'RT', onPress: () => _pressButton(0x02000000), onRelease: () => _releaseButton(0x02000000)),
-              const SizedBox(width: 8),
-              _ShoulderButton(label: 'RB', onPress: () => _pressButton(XButton.rb), onRelease: () => _releaseButton(XButton.rb)),
-            ],
-          ),
-        ),
-        // Start / Back
-        Positioned(
-          left: size.width / 2 - 50, bottom: 16,
-          child: Row(
-            children: [
-              _SmallButton(label: 'BACK', onPress: () => _pressButton(XButton.back), onRelease: () => _releaseButton(XButton.back)),
-              const SizedBox(width: 12),
-              _SmallButton(label: 'START', onPress: () => _pressButton(XButton.start), onRelease: () => _releaseButton(XButton.start)),
+              _SmallButton(label: 'BACK', onPress: () => _press(0x0020), onRelease: () => _release(0x0020)),
+              const SizedBox(width: 16),
+              _GuideButton(onPress: () => _press(0x0400), onRelease: () => _release(0x0400)),
+              const SizedBox(width: 16),
+              _SmallButton(label: 'START', onPress: () => _press(0x0010), onRelease: () => _release(0x0010)),
             ],
           ),
         ),
@@ -133,70 +99,77 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
   }
 }
 
-class _AnalogStick extends StatefulWidget {
-  final double radius;
-  final ValueChanged<Offset> onChanged;
-  const _AnalogStick({required this.radius, required this.onChanged});
+// ─── Thumbstick ────────────────────────────────────────────────────────────
 
+class _Thumbstick extends StatefulWidget {
+  final double x, y;
+  final void Function(double x, double y) onMove;
+  final String label;
+  const _Thumbstick({required this.x, required this.y, required this.onMove, required this.label});
   @override
-  State<_AnalogStick> createState() => _AnalogStickState();
+  State<_Thumbstick> createState() => _ThumbstickState();
 }
 
-class _AnalogStickState extends State<_AnalogStick> {
-  Offset _pos = Offset.zero;
-  Offset? _origin;
-
-  void _onPanStart(DragStartDetails d) => _origin = d.localPosition;
-
-  void _onPanUpdate(DragUpdateDetails d) {
-    if (_origin == null) return;
-    final delta = d.localPosition - _origin!;
-    final maxR = widget.radius * 0.6;
-    final clamped = delta.distance > maxR
-        ? Offset.fromDirection(delta.direction, maxR)
-        : delta;
-    final normalized = Offset(clamped.dx / maxR, clamped.dy / maxR);
-    setState(() => _pos = clamped);
-    widget.onChanged(normalized);
-  }
-
-  void _onPanEnd(DragEndDetails _) {
-    setState(() => _pos = Offset.zero);
-    _origin = null;
-    widget.onChanged(Offset.zero);
-  }
+class _ThumbstickState extends State<_Thumbstick> {
+  static const _radius = 52.0;
+  static const _thumbRadius = 20.0;
+  Offset _thumbPos = Offset.zero;
+  bool _active = false;
 
   @override
   Widget build(BuildContext context) {
-    final r = widget.radius;
     return GestureDetector(
-      onPanStart: _onPanStart,
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: _onPanEnd,
-      child: SizedBox(
-        width: r * 2, height: r * 2,
-        child: CustomPaint(painter: _StickPainter(_pos, r)),
+      onPanStart: (d) {
+        setState(() => _active = true);
+        _updatePosition(d.localPosition, const Offset(_radius, _radius));
+      },
+      onPanUpdate: (d) => _updatePosition(d.localPosition, const Offset(_radius, _radius)),
+      onPanEnd: (_) {
+        setState(() { _active = false; _thumbPos = Offset.zero; });
+        widget.onMove(0, 0);
+      },
+      child: Container(
+        width: _radius * 2, height: _radius * 2,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withAlpha(_active ? 20 : 12),
+          border: Border.all(color: Colors.white.withAlpha(_active ? 60 : 30), width: 1.5),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.translate(
+              offset: _thumbPos,
+              child: Container(
+                width: _thumbRadius * 2, height: _thumbRadius * 2,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withAlpha(_active ? 80 : 40),
+                  border: Border.all(color: Colors.white.withAlpha(100), width: 1),
+                ),
+              ),
+            ),
+            if (!_active)
+              Text(widget.label, style: const TextStyle(color: Colors.white24, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          ],
+        ),
       ),
     );
   }
-}
 
-class _StickPainter extends CustomPainter {
-  final Offset pos;
-  final double r;
-  _StickPainter(this.pos, this.r);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(r, r);
-    canvas.drawCircle(center, r, Paint()..color = Colors.white.withOpacity(0.12));
-    canvas.drawCircle(center, r, Paint()..color = Colors.white.withOpacity(0.25)..style = PaintingStyle.stroke..strokeWidth = 1.5);
-    canvas.drawCircle(center + pos, r * 0.38, Paint()..color = Colors.white.withOpacity(0.55));
+  void _updatePosition(Offset pos, Offset center) {
+    final delta = pos - center;
+    final dist = delta.distance;
+    final maxDist = _radius - _thumbRadius;
+    final clamped = dist <= maxDist ? delta : delta / dist * maxDist;
+    setState(() => _thumbPos = clamped);
+    final nx = (clamped.dx / maxDist).clamp(-1.0, 1.0);
+    final ny = (clamped.dy / maxDist).clamp(-1.0, 1.0);
+    widget.onMove(nx, -ny);
   }
-
-  @override
-  bool shouldRepaint(_StickPainter old) => old.pos != pos;
 }
+
+// ─── D-Pad ─────────────────────────────────────────────────────────────────
 
 class _DPad extends StatelessWidget {
   final void Function(int) onPress;
@@ -205,42 +178,55 @@ class _DPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const size = 36.0;
+    const btn = Color(0x33FFFFFF);
+    const border = Color(0x44FFFFFF);
     return SizedBox(
-      width: 100, height: 100,
+      width: size * 3, height: size * 3,
       child: Stack(
         children: [
-          Positioned(top: 0, left: 30, child: _DPadBtn('↑', () => onPress(XButton.dpadUp), () => onRelease(XButton.dpadUp))),
-          Positioned(bottom: 0, left: 30, child: _DPadBtn('↓', () => onPress(XButton.dpadDown), () => onRelease(XButton.dpadDown))),
-          Positioned(top: 30, left: 0, child: _DPadBtn('←', () => onPress(XButton.dpadLeft), () => onRelease(XButton.dpadLeft))),
-          Positioned(top: 30, right: 0, child: _DPadBtn('→', () => onPress(XButton.dpadRight), () => onRelease(XButton.dpadRight))),
+          Positioned(left: size, top: 0,    child: _DPadBtn(w: size, h: size, icon: Icons.keyboard_arrow_up_rounded,    color: btn, border: border, onPress: () => onPress(0x0001),  onRelease: () => onRelease(0x0001))),
+          Positioned(left: size, bottom: 0, child: _DPadBtn(w: size, h: size, icon: Icons.keyboard_arrow_down_rounded,  color: btn, border: border, onPress: () => onPress(0x0002),  onRelease: () => onRelease(0x0002))),
+          Positioned(left: 0,    top: size, child: _DPadBtn(w: size, h: size, icon: Icons.keyboard_arrow_left_rounded,  color: btn, border: border, onPress: () => onPress(0x0004),  onRelease: () => onRelease(0x0004))),
+          Positioned(right: 0,   top: size, child: _DPadBtn(w: size, h: size, icon: Icons.keyboard_arrow_right_rounded, color: btn, border: border, onPress: () => onPress(0x0008),  onRelease: () => onRelease(0x0008))),
+          Positioned(left: size, top: size, child: Container(width: size, height: size, color: const Color(0x22FFFFFF))),
         ],
       ),
     );
   }
 }
 
-class _DPadBtn extends StatelessWidget {
-  final String label;
+class _DPadBtn extends StatefulWidget {
+  final double w, h;
+  final IconData icon;
+  final Color color, border;
   final VoidCallback onPress, onRelease;
-  const _DPadBtn(this.label, this.onPress, this.onRelease);
+  const _DPadBtn({required this.w, required this.h, required this.icon, required this.color, required this.border, required this.onPress, required this.onRelease});
+  @override
+  State<_DPadBtn> createState() => _DPadBtnState();
+}
 
+class _DPadBtnState extends State<_DPadBtn> {
+  bool _pressed = false;
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => onPress(),
-      onTapUp: (_) => onRelease(),
-      onTapCancel: onRelease,
+      onTapDown: (_) { setState(() => _pressed = true); widget.onPress(); },
+      onTapUp: (_) { setState(() => _pressed = false); widget.onRelease(); },
+      onTapCancel: () { setState(() => _pressed = false); widget.onRelease(); },
       child: Container(
-        width: 36, height: 36,
+        width: widget.w, height: widget.h,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(6),
+          color: _pressed ? widget.color.withAlpha(80) : widget.color,
+          border: Border.all(color: widget.border, width: 0.5),
         ),
-        child: Center(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 16))),
+        child: Icon(widget.icon, color: Colors.white.withAlpha(_pressed ? 220 : 140), size: 20),
       ),
     );
   }
 }
+
+// ─── ABXY Cluster ──────────────────────────────────────────────────────────
 
 class _ABXYCluster extends StatelessWidget {
   final void Function(int) onPress;
@@ -249,86 +235,193 @@ class _ABXYCluster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const s = 44.0;
     return SizedBox(
-      width: 110, height: 110,
+      width: s * 3, height: s * 3,
       child: Stack(
+        alignment: Alignment.center,
         children: [
-          Positioned(top: 0, left: 36, child: _XBtn('Y', const Color(0xFFFFD700), XButton.y, onPress, onRelease)),
-          Positioned(bottom: 0, left: 36, child: _XBtn('A', const Color(0xFF107C10), XButton.a, onPress, onRelease)),
-          Positioned(top: 36, left: 0, child: _XBtn('X', const Color(0xFF0078D7), XButton.x, onPress, onRelease)),
-          Positioned(top: 36, right: 0, child: _XBtn('B', const Color(0xFFD32F2F), XButton.b, onPress, onRelease)),
+          Positioned(left: s, top: 0,     child: _FaceBtn(label: 'Y', color: AppTheme.buttonY,  btnId: 0x8000, size: s, onPress: onPress, onRelease: onRelease)),
+          Positioned(left: s, bottom: 0,  child: _FaceBtn(label: 'A', color: AppTheme.buttonA,  btnId: 0x1000, size: s, onPress: onPress, onRelease: onRelease)),
+          Positioned(left: 0, top: s,     child: _FaceBtn(label: 'X', color: AppTheme.buttonX,  btnId: 0x4000, size: s, onPress: onPress, onRelease: onRelease)),
+          Positioned(right: 0, top: s,    child: _FaceBtn(label: 'B', color: AppTheme.buttonB,  btnId: 0x2000, size: s, onPress: onPress, onRelease: onRelease)),
         ],
       ),
     );
   }
 }
 
-class _XBtn extends StatelessWidget {
+class _FaceBtn extends StatefulWidget {
   final String label;
   final Color color;
-  final int btn;
-  final void Function(int) onPress;
-  final void Function(int) onRelease;
-  const _XBtn(this.label, this.color, this.btn, this.onPress, this.onRelease);
+  final int btnId;
+  final double size;
+  final void Function(int) onPress, onRelease;
+  const _FaceBtn({required this.label, required this.color, required this.btnId, required this.size, required this.onPress, required this.onRelease});
+  @override
+  State<_FaceBtn> createState() => _FaceBtnState();
+}
 
+class _FaceBtnState extends State<_FaceBtn> {
+  bool _pressed = false;
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => onPress(btn),
-      onTapUp: (_) => onRelease(btn),
-      onTapCancel: () => onRelease(btn),
-      child: Container(
-        width: 36, height: 36,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: color.withOpacity(0.75)),
-        child: Center(child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14))),
+      onTapDown: (_) { setState(() => _pressed = true); widget.onPress(widget.btnId); },
+      onTapUp: (_) { setState(() => _pressed = false); widget.onRelease(widget.btnId); },
+      onTapCancel: () { setState(() => _pressed = false); widget.onRelease(widget.btnId); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
+        width: widget.size, height: widget.size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _pressed ? widget.color.withAlpha(200) : widget.color.withAlpha(60),
+          border: Border.all(color: widget.color.withAlpha(_pressed ? 255 : 160), width: 1.5),
+          boxShadow: _pressed ? [BoxShadow(color: widget.color.withAlpha(100), blurRadius: 8)] : null,
+        ),
+        child: Center(
+          child: Text(widget.label,
+              style: TextStyle(
+                color: widget.color.withAlpha(_pressed ? 255 : 200),
+                fontSize: 14, fontWeight: FontWeight.w800,
+              )),
+        ),
       ),
     );
   }
 }
 
-class _ShoulderButton extends StatelessWidget {
+// ─── Shoulder / Trigger buttons ────────────────────────────────────────────
+
+class _ShoulderButton extends StatefulWidget {
   final String label;
   final VoidCallback onPress, onRelease;
   const _ShoulderButton({required this.label, required this.onPress, required this.onRelease});
+  @override
+  State<_ShoulderButton> createState() => _ShoulderButtonState();
+}
 
+class _ShoulderButtonState extends State<_ShoulderButton> {
+  bool _pressed = false;
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => onPress(),
-      onTapUp: (_) => onRelease(),
-      onTapCancel: onRelease,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      onTapDown: (_) { setState(() => _pressed = true); widget.onPress(); },
+      onTapUp: (_) { setState(() => _pressed = false); widget.onRelease(); },
+      onTapCancel: () { setState(() => _pressed = false); widget.onRelease(); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: _pressed ? Colors.white.withAlpha(50) : Colors.white.withAlpha(20),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white24),
+          border: Border.all(color: Colors.white.withAlpha(_pressed ? 120 : 50)),
         ),
-        child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+        child: Text(widget.label, style: TextStyle(color: Colors.white.withAlpha(_pressed ? 230 : 160), fontSize: 12, fontWeight: FontWeight.w700)),
       ),
     );
   }
 }
 
-class _SmallButton extends StatelessWidget {
+class _TriggerButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPress, onRelease;
-  const _SmallButton({required this.label, required this.onPress, required this.onRelease});
+  final double value;
+  final ValueChanged<double> onDrag;
+  const _TriggerButton({required this.label, required this.value, required this.onDrag});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => onPress(),
-      onTapUp: (_) => onRelease(),
-      onTapCancel: onRelease,
+      onVerticalDragUpdate: (d) {
+        final delta = -d.delta.dy / 80;
+        final newVal = (value + delta).clamp(0.0, 1.0);
+        onDrag(newVal);
+      },
+      onVerticalDragEnd: (_) => onDrag(0),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        width: 44, height: 20,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white12),
+          color: Colors.white.withAlpha((20 + (value * 50)).round()),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white.withAlpha(60)),
         ),
-        child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
+        child: Stack(
+          children: [
+            FractionallySizedBox(
+              widthFactor: value,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.xboxGreen.withAlpha(140),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
+            ),
+            Center(
+              child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideButton extends StatefulWidget {
+  final VoidCallback onPress, onRelease;
+  const _GuideButton({required this.onPress, required this.onRelease});
+  @override
+  State<_GuideButton> createState() => _GuideButtonState();
+}
+
+class _GuideButtonState extends State<_GuideButton> {
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) { setState(() => _pressed = true); widget.onPress(); },
+      onTapUp: (_) { setState(() => _pressed = false); widget.onRelease(); },
+      onTapCancel: () { setState(() => _pressed = false); widget.onRelease(); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
+        width: 36, height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _pressed ? AppTheme.xboxGreen.withAlpha(180) : AppTheme.xboxGreen.withAlpha(50),
+          border: Border.all(color: AppTheme.xboxGreen.withAlpha(180), width: 2),
+        ),
+        child: const Center(
+          child: Text('𝕏', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onPress, onRelease;
+  const _SmallButton({required this.label, required this.onPress, required this.onRelease});
+  @override
+  State<_SmallButton> createState() => _SmallButtonState();
+}
+
+class _SmallButtonState extends State<_SmallButton> {
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) { setState(() => _pressed = true); widget.onPress(); },
+      onTapUp: (_) { setState(() => _pressed = false); widget.onRelease(); },
+      onTapCancel: () { setState(() => _pressed = false); widget.onRelease(); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: _pressed ? Colors.white.withAlpha(40) : Colors.white.withAlpha(12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(_pressed ? 80 : 30)),
+        ),
+        child: Text(widget.label, style: TextStyle(color: Colors.white.withAlpha(_pressed ? 200 : 120), fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
       ),
     );
   }
