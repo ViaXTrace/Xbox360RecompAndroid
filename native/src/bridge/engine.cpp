@@ -17,12 +17,8 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-namespace x360 {
-namespace bridge {
-
-namespace fs = std::filesystem;
-
-// Forward-declared globals from jni_bridge.cpp
+// ─── Globals defined in jni_bridge.cpp (global scope, not namespaced) ────────
+// engine.cpp uses extern declarations at global scope to match the definitions.
 extern x360::XexLoader          g_xexLoader;
 extern x360::jit::JitEngine     g_jitEngine;
 extern x360::hle::HleKernel     g_hleKernel;
@@ -30,8 +26,14 @@ extern x360::gpu::GpuLayer      g_gpuLayer;
 extern uint8_t*                  g_guestMemory;
 extern std::string               g_gameDir;
 extern std::string               g_saveDir;
-static constexpr uint64_t GUEST_BASE = 0x00000000ULL;
+
+static constexpr uint64_t GUEST_BASE     = 0x00000000ULL;
 static constexpr size_t   GUEST_MEM_SIZE = 0x100000000ULL;
+
+namespace x360 {
+namespace bridge {
+
+namespace fs = std::filesystem;
 
 // ─── STFS game loader (delegates to StfsParser + XexLoader) ─────────────────
 
