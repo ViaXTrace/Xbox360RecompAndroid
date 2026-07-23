@@ -1,0 +1,6 @@
+# CI-generated local.properties — do not commit local.properties
+# This template is used by the workflow to auto-generate the real local.properties
+sdk.dir=/usr/local/lib/android/sdk
+flutter.sdk=/opt/hostedtoolcache/flutter/stable-3.22.0-x64/flutter
+flutter.versionCode=1
+flutter.versionName=0.1.0
