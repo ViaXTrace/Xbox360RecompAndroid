@@ -1,0 +1,206 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+env:
+  FLUTTER_VERSION: '3.22.0'
+  NDK_VERSION: '26.3.11579264'
+  JAVA_VERSION: '17'
+
+jobs:
+  build-apk:
+    name: Build APK (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Set up Android NDK
+        run: |
+          echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;${{ env.NDK_VERSION }}" \
+            "cmake;3.22.1" \
+            "build-tools;34.0.0" \
+            "platforms;android-34"
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.22.x'
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache NDK build
+        uses: actions/cache@v4
+        with:
+          path: android/.cxx
+          key: ${{ runner.os }}-ndk-${{ hashFiles('android/CMakeLists.txt', 'native/**/*.cpp', 'native/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-ndk-
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Run code generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze code
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: true
+
+      - name: Set up keystore (release builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          cat > android/key.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          flutter build apk \
+            --release \
+            --target-platform android-arm64 \
+            --split-per-abi \
+            --no-shrink \
+            --dart-define=COMMIT_SHA=${{ github.sha }} \
+            --dart-define=BUILD_NUMBER=${{ github.run_number }}
+
+      - name: Build debug APK (non-tag builds)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: |
+          flutter build apk \
+            --debug \
+            --target-platform android-arm64 \
+            --dart-define=COMMIT_SHA=${{ github.sha }} \
+            --dart-define=BUILD_NUMBER=${{ github.run_number }}
+
+      - name: Rename APK artifacts
+        run: |
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME:-dev-${{ github.run_number }}}"
+          if [ -f "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+               dist/Xbox360RecompAndroid-${VERSION}-arm64.apk
+          elif [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-debug.apk \
+               dist/Xbox360RecompAndroid-${VERSION}-arm64-debug.apk
+          fi
+          ls -lh dist/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ github.ref_name }}-${{ github.run_number }}
+          path: dist/*.apk
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build-apk
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Extract changelog section for this version
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "$TAG" | tail -1)
+          echo "## Changes in $TAG" > changelog.md
+          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$TAG" ]; then
+            git log ${PREV_TAG}..${TAG} --pretty=format:"- %s (%h)" >> changelog.md
+          else
+            git log --pretty=format:"- %s (%h)" -20 >> changelog.md
+          fi
+          echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Xbox360RecompAndroid ${{ github.ref_name }}
+          body_path: changelog.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: dist/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  compat-db-validate:
+    name: Validate Compatibility Database
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate games.json
+        run: |
+          cat compat/games.json | python3 -m json.tool > /dev/null && echo "✅ compat/games.json is valid JSON"
+          COUNT=$(cat compat/games.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('games',[])))")
+          echo "📊 Games in database: $COUNT"

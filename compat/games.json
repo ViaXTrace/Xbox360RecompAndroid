@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "updated": "2025-07-23",
+  "source": "https://github.com/ViaXTrace/Xbox360RecompAndroid",
+  "games": [
+    {
+      "title_id": "45410829",
+      "title": "Sonic Unleashed",
+      "region": "NTSC-U",
+      "status": "ingame",
+      "issues": ["shadow rendering artifacts", "occasional audio dropout"],
+      "notes": "Reference game from UnleashedRecomp-Android. Best tested title.",
+      "tested_version": "0.1.0",
+      "contributor": "community"
+    },
+    {
+      "title_id": "45410914",
+      "title": "Halo 3",
+      "region": "NTSC-U",
+      "status": "boots",
+      "issues": ["GPU shader recompiler incomplete", "missing audio voices"],
+      "notes": "Reaches title screen. Gameplay not yet reachable.",
+      "tested_version": "0.1.0",
+      "contributor": "community"
+    },
+    {
+      "title_id": "4D5307D5",
+      "title": "Minecraft: Xbox 360 Edition",
+      "region": "NTSC-U",
+      "status": "boots",
+      "issues": ["texture detile issues", "input not fully mapped"],
+      "notes": "",
+      "tested_version": "0.1.0",
+      "contributor": "community"
+    },
+    {
+      "title_id": "584111F7",
+      "title": "Geometry Wars: Retro Evolved 2",
+      "region": "XBLA",
+      "status": "nothing",
+      "issues": ["XEX encryption not fully resolved for XBLA"],
+      "notes": "XBLA LIVE container support in progress.",
+      "tested_version": "0.1.0",
+      "contributor": "community"
+    }
+  ]
+}

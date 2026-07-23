@@ -1,0 +1,54 @@
+name: Compatibility Database
+
+on:
+  push:
+    paths:
+      - 'compat/games.json'
+      - 'docs/compat/**'
+  pull_request:
+    paths:
+      - 'compat/games.json'
+
+jobs:
+  validate:
+    name: Validate & Publish Compat DB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON schema
+        run: |
+          python3 -c "
+          import json, sys
+          with open('compat/games.json') as f:
+              db = json.load(f)
+          games = db.get('games', [])
+          errors = []
+          required = {'title_id', 'title', 'status'}
+          valid_statuses = {'playable', 'ingame', 'boots', 'nothing'}
+          for i, g in enumerate(games):
+              missing = required - set(g.keys())
+              if missing:
+                  errors.append(f'Game[{i}] missing fields: {missing}')
+              if g.get('status') not in valid_statuses:
+                  errors.append(f'Game[{i}] invalid status: {g.get(\"status\")}')
+          if errors:
+              for e in errors: print('ERROR:', e)
+              sys.exit(1)
+          print(f'✅ Validated {len(games)} games')
+          "
+
+      - name: Generate stats
+        run: |
+          python3 -c "
+          import json
+          with open('compat/games.json') as f:
+              db = json.load(f)
+          games = db.get('games', [])
+          from collections import Counter
+          stats = Counter(g['status'] for g in games)
+          print('📊 Compatibility Stats:')
+          for status, count in stats.most_common():
+              print(f'  {status}: {count}')
+          print(f'  Total: {len(games)}')
+          "
