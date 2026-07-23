@@ -152,7 +152,7 @@ class EngineBridge {
   static int loadXex(String path) {
     if (!_initialized) return -1;
     final pathPtr = path.toNativeUtf8();
-    final titleBuf = calloc<Utf8>(64);
+    final titleBuf = calloc<Uint8>(64).cast<Utf8>();
     try {
       return _xexLoad(pathPtr, titleBuf, 64);
     } finally {
@@ -164,7 +164,7 @@ class EngineBridge {
   static int loadStfs(String path) {
     if (!_initialized) return -1;
     final pathPtr = path.toNativeUtf8();
-    final titleBuf = calloc<Utf8>(64);
+    final titleBuf = calloc<Uint8>(64).cast<Utf8>();
     try {
       return _stfsLoad(pathPtr, titleBuf, 64);
     } finally {
@@ -176,7 +176,7 @@ class EngineBridge {
   static int loadIso(String path) {
     if (!_initialized) return -1;
     final pathPtr = path.toNativeUtf8();
-    final titleBuf = calloc<Utf8>(64);
+    final titleBuf = calloc<Uint8>(64).cast<Utf8>();
     try {
       return _isoLoad(pathPtr, titleBuf, 64);
     } finally {
