@@ -12,6 +12,7 @@
  * Code arena: anonymous mmap with PROT_EXEC, flushed with __builtin___clear_cache.
  */
 #include "../../include/jit/jit_engine.h"
+#include "../../include/jit/ir.h"
 #include <cstdint>
 #include <cassert>
 #include <android/log.h>
@@ -311,6 +312,33 @@ static size_t emitIr(uint8_t*& out, const struct IrInstr& ir, const PPCContext& 
 // Flush instruction cache for the given range (required after JIT code write)
 void JitEngine::flushICache(uint8_t* start, size_t size) {
     __builtin___clear_cache(start, start + size);
+}
+
+// ─── jitCompileBlock ────────────────────────────────────────────────────────────
+// Called by JitEngine to compile a single guest IR block into native ARM64.
+// Returns the size of emitted code in bytes, or 0 on failure.
+// Defined here (arm64_backend.cpp) to keep all ARM64 code generation in one file.
+size_t JitEngine::jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes) {
+    uint8_t* cursor = out;
+    const uint8_t* end = out + maxBytes;
+
+    for (const auto& ir : block.instrs) {
+        if (cursor + 64 >= end) {
+            LOGE("ARM64: code buffer overflow at guestPc=0x%llX",
+                 (unsigned long long)ir.guestPc);
+            break;
+        }
+        size_t emitted = emitArm64Instr(cursor, ir);
+        cursor += emitted;
+    }
+
+    // Emit a return to JIT dispatch loop at the end of each block
+    arm64_ret(cursor);
+    cursor += 4;
+
+    size_t totalBytes = cursor - out;
+    flushICache(out, totalBytes);
+    return totalBytes;
 }
 
 } // namespace jit

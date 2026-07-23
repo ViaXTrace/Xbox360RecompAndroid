@@ -39,42 +39,8 @@ static inline int32_t  PPC_LI(uint32_t i)  {
 static inline bool PPC_AA(uint32_t i) { return (i >> 1) & 1; }
 static inline bool PPC_LK(uint32_t i) { return i & 1; }
 
-// ─── Instruction types (minimal IR for ARM64 backend) ─────────────────────────
-enum class IrOp {
-    // Integer arithmetic
-    Add, Sub, Mul, Div, And, Or, Xor, Nand, Nor, Eqv,
-    ShiftL, ShiftR, ShiftRA, RotateL,
-    // Compare
-    Cmp, Cmpl, Cmpli, Cmpi,
-    // Branch
-    B, BC, BCLR, BCCTR,
-    // Load/store (with endian swap)
-    Lbz, Lhz, Lwz, Ld, Lbzx, Lhzx, Lwzx, Ldx,
-    Stb, Sth, Stw, Std, Stbx, Sthx, Stwx, Stdx,
-    // FPU
-    Fadd, Fsub, Fmul, Fdiv, Fmadd, Fmsub, Fsqrt, Frsp, Fctiwz,
-    Lfs, Lfd, Stfs, Stfd,
-    // VMX128
-    Lvx, Stvx, Vperm, Vsel, Vaddfp, Vsubfp, Vmulfp,
-    Vand, Vor, Vxor, Vnor,
-    Vslo, Vsro, Vsl, Vsr,
-    // Special
-    Mtspr, Mfspr, Mtcrf, Mfcr, Sync, Isync, Eieio,
-    Lwarx, Stwcx, Ldarx, Stdcx,
-    // HLE trampoline
-    HleCall,
-    // Unknown
-    Unknown,
-};
-
-struct IrInstr {
-    IrOp    op;
-    int     rd, ra, rb, rc;   // register operands (-1 = not used)
-    int64_t imm;              // immediate / branch target
-    bool    setRecord;        // sets CR0
-    bool    link;             // branch with link
-    uint64_t guestPc;
-};
+// ─── IR types (shared with arm64_backend) ─────────────────────────────────────
+#include "../../include/jit/ir.h"
 
 // Decode a single 32-bit instruction into an IrInstr
 static IrInstr decodePPC(uint32_t instr, uint64_t pc) {
