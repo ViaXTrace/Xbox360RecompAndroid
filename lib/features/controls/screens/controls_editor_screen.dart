@@ -1,134 +1,167 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
+import '../../../core/theme/app_theme.dart';
 
+/// Visual drag-and-drop touch controls layout editor.
 class ControlsEditorScreen extends StatefulWidget {
-  final String titleId;
-  const ControlsEditorScreen({super.key, required this.titleId});
-
+  const ControlsEditorScreen({super.key});
   @override
   State<ControlsEditorScreen> createState() => _ControlsEditorScreenState();
 }
 
 class _ControlsEditorScreenState extends State<ControlsEditorScreen> {
-  bool _portrait = false;
-  double _opacity = 0.7;
-  bool _snapToGrid = true;
-  double _buttonScale = 1.0;
-
-  // Each control element with its position
   final Map<String, Offset> _positions = {
-    'left_stick': const Offset(80, 400),
-    'right_stick': const Offset(520, 420),
-    'dpad': const Offset(60, 260),
-    'abxy': const Offset(510, 240),
-    'lb': const Offset(20, 60),
-    'lt': const Offset(100, 50),
-    'rb': const Offset(520, 50),
-    'rt': const Offset(600, 60),
-    'start': const Offset(340, 380),
-    'back': const Offset(260, 380),
+    'LS':    const Offset(0.08, 0.55),
+    'DPAD':  const Offset(0.25, 0.65),
+    'BACK':  const Offset(0.40, 0.80),
+    'GUIDE': const Offset(0.50, 0.80),
+    'START': const Offset(0.60, 0.80),
+    'ABXY':  const Offset(0.80, 0.55),
+    'RS':    const Offset(0.65, 0.65),
+    'LB':    const Offset(0.08, 0.08),
+    'RB':    const Offset(0.85, 0.08),
+    'LT':    const Offset(0.18, 0.08),
+    'RT':    const Offset(0.75, 0.08),
   };
-
-  String? _dragging;
+  double _opacity = 0.7;
+  double _scale = 1.0;
   String? _selected;
+
+  void _enterFullscreen() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  void _exitFullscreen() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _enterFullscreen();
+  }
+
+  @override
+  void dispose() {
+    _exitFullscreen();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Game background placeholder
-          Positioned.fill(
-            child: Container(
-              color: const Color(0xFF0A0A0A),
-              child: const Center(
-                child: Text('Layout Editor\n(Game runs behind controls)',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white12, fontSize: 14)),
+          // Grid background
+          CustomPaint(painter: _GridBg(), size: size),
+
+          // Draggable controls
+          for (final entry in _positions.entries)
+            Positioned(
+              left: entry.value.dx * size.width,
+              top: entry.value.dy * size.height,
+              child: GestureDetector(
+                onTap: () => setState(() => _selected = _selected == entry.key ? null : entry.key),
+                onPanUpdate: (d) {
+                  setState(() {
+                    final newX = ((entry.value.dx * size.width + d.delta.dx) / size.width).clamp(0.0, 0.95);
+                    final newY = ((entry.value.dy * size.height + d.delta.dy) / size.height).clamp(0.0, 0.95);
+                    _positions[entry.key] = Offset(newX, newY);
+                  });
+                },
+                child: Opacity(
+                  opacity: _opacity,
+                  child: Transform.scale(
+                    scale: _scale,
+                    child: _ControlWidget(
+                      id: entry.key,
+                      selected: _selected == entry.key,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
 
-          // Grid overlay when snap enabled
-          if (_snapToGrid)
-            Positioned.fill(
-              child: CustomPaint(painter: _GridPainter()),
-            ),
-
-          // Draggable control elements
-          for (final entry in _positions.entries)
-            _buildDraggable(entry.key, entry.value),
-
-          // Top toolbar
+          // Top bar
           Positioned(
             top: 0, left: 0, right: 0,
             child: Container(
-              color: Colors.black87,
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 8,
-                bottom: 8, left: 12, right: 12,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Colors.black.withAlpha(200), Colors.transparent],
+                ),
               ),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    onPressed: () { _exitFullscreen(); Navigator.pop(context); },
                   ),
-                  const Text('Controls Editor', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16)),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(_snapToGrid ? Icons.grid_on : Icons.grid_off, color: Colors.white54),
-                    tooltip: 'Snap to grid',
-                    onPressed: () => setState(() => _snapToGrid = !_snapToGrid),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.restore, color: Colors.white54),
-                    tooltip: 'Reset layout',
-                    onPressed: _resetLayout,
-                  ),
+                  const Expanded(child: Text('Edit Controls', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600))),
                   TextButton(
-                    onPressed: _saveLayout,
-                    child: const Text('Save', style: TextStyle(color: Color(0xFF107C10), fontWeight: FontWeight.w700)),
+                    onPressed: _resetDefaults,
+                    child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+                  ),
+                  const SizedBox(width: 4),
+                  ElevatedButton(
+                    onPressed: () { _exitFullscreen(); Navigator.pop(context); },
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.xboxGreen, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                    child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
             ),
           ),
 
-          // Bottom panel — selected element controls
+          // Bottom controls bar
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: Container(
-              color: Colors.black87,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                  colors: [Colors.black.withAlpha(220), Colors.transparent],
+                ),
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(children: [
-                    const Text('Opacity', style: TextStyle(color: Colors.white54, fontSize: 13)),
-                    Expanded(child: Slider(
-                      value: _opacity,
-                      min: 0.1, max: 1.0,
-                      onChanged: (v) => setState(() => _opacity = v),
-                    )),
-                    Text('${(_opacity * 100).round()}%', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                  ]),
-                  Row(children: [
-                    const Text('Size', style: TextStyle(color: Colors.white54, fontSize: 13)),
-                    Expanded(child: Slider(
-                      value: _buttonScale,
-                      min: 0.5, max: 2.0,
-                      onChanged: (v) => setState(() => _buttonScale = v),
-                    )),
-                    Text('${(_buttonScale * 100).round()}%', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                  ]),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                    OutlinedButton(onPressed: () => setState(() => _portrait = !_portrait),
-                      child: Text(_portrait ? 'Portrait' : 'Landscape')),
-                    OutlinedButton(onPressed: () {}, child: const Text('Import Profile')),
-                    OutlinedButton(onPressed: () {}, child: const Text('Export Profile')),
-                  ]),
+                  Row(
+                    children: [
+                      const Text('Opacity', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Expanded(
+                        child: Slider(
+                          value: _opacity, min: 0.2, max: 1.0,
+                          onChanged: (v) => setState(() => _opacity = v),
+                        ),
+                      ),
+                      Text('${(_opacity * 100).round()}%', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const Text('Scale', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Expanded(
+                        child: Slider(
+                          value: _scale, min: 0.6, max: 1.5,
+                          onChanged: (v) => setState(() => _scale = v),
+                        ),
+                      ),
+                      Text('${(_scale * 100).round()}%', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    ],
+                  ),
+                  const Text(
+                    'Drag buttons to reposition • Tap to select',
+                    style: TextStyle(color: Colors.white24, fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -138,103 +171,94 @@ class _ControlsEditorScreenState extends State<ControlsEditorScreen> {
     );
   }
 
-  Widget _buildDraggable(String key, Offset position) {
-    final label = _labelFor(key);
-    final isSelected = _selected == key;
+  void _resetDefaults() {
+    setState(() {
+      _positions.addAll({
+        'LS':    const Offset(0.08, 0.55),
+        'DPAD':  const Offset(0.25, 0.65),
+        'BACK':  const Offset(0.40, 0.80),
+        'GUIDE': const Offset(0.50, 0.80),
+        'START': const Offset(0.60, 0.80),
+        'ABXY':  const Offset(0.80, 0.55),
+        'RS':    const Offset(0.65, 0.65),
+        'LB':    const Offset(0.08, 0.08),
+        'RB':    const Offset(0.85, 0.08),
+        'LT':    const Offset(0.18, 0.08),
+        'RT':    const Offset(0.75, 0.08),
+      });
+    });
+  }
+}
 
-    return Positioned(
-      left: position.dx,
-      top: position.dy,
-      child: GestureDetector(
-        onTap: () => setState(() => _selected = key),
-        onPanUpdate: (d) {
-          setState(() {
-            var newPos = _positions[key]! + d.delta;
-            if (_snapToGrid) {
-              const grid = 16.0;
-              newPos = Offset(
-                (newPos.dx / grid).round() * grid,
-                (newPos.dy / grid).round() * grid,
-              );
-            }
-            _positions[key] = newPos;
-          });
-        },
-        child: Opacity(
-          opacity: _opacity,
-          child: Transform.scale(
-            scale: _buttonScale,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF107C10).withOpacity(0.4) : Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected ? const Color(0xFF107C10) : Colors.white24,
-                  width: isSelected ? 2 : 1,
-                ),
-              ),
-              child: Text(label,
-                style: TextStyle(color: isSelected ? Colors.white : Colors.white70,
-                  fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ),
+class _ControlWidget extends StatelessWidget {
+  final String id;
+  final bool selected;
+  const _ControlWidget({required this.id, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: selected ? BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.xboxGreen, width: 2),
+      ) : null,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        child: _buildControl(id),
       ),
     );
   }
 
-  String _labelFor(String key) => switch (key) {
-    'left_stick' => '⬤ L',
-    'right_stick' => '⬤ R',
-    'dpad' => '✛',
-    'abxy' => 'ABXY',
-    'lb' => 'LB',
-    'lt' => 'LT',
-    'rb' => 'RB',
-    'rt' => 'RT',
-    'start' => '≡',
-    'back' => '⧉',
-    _ => key,
-  };
-
-  void _resetLayout() {
-    setState(() {
-      _positions.addAll({
-        'left_stick': const Offset(80, 400),
-        'right_stick': const Offset(520, 420),
-        'dpad': const Offset(60, 260),
-        'abxy': const Offset(510, 240),
-        'lb': const Offset(20, 60),
-        'lt': const Offset(100, 50),
-        'rb': const Offset(520, 50),
-        'rt': const Offset(600, 60),
-        'start': const Offset(340, 380),
-        'back': const Offset(260, 380),
-      });
-    });
-  }
-
-  void _saveLayout() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Controls layout saved')),
-    );
-    context.pop();
+  Widget _buildControl(String id) {
+    switch (id) {
+      case 'ABXY':
+        return _ControlLabel('A B\nX Y', AppTheme.xboxGreenLight, 48);
+      case 'DPAD':
+        return _ControlLabel('D-Pad', Colors.white60, 40);
+      case 'LS': case 'RS':
+        return _ControlLabel(id, Colors.white60, 36);
+      case 'LB': case 'RB':
+        return _ControlLabel(id, Colors.white60, 32);
+      case 'LT': case 'RT':
+        return _ControlLabel(id, AppTheme.xboxGreenLight, 32);
+      case 'GUIDE':
+        return _ControlLabel('𝕏', AppTheme.xboxGreen, 28);
+      default:
+        return _ControlLabel(id, Colors.white38, 30);
+    }
   }
 }
 
-class _GridPainter extends CustomPainter {
+class _ControlLabel extends StatelessWidget {
+  final String text;
+  final Color color;
+  final double size;
+  const _ControlLabel(this.text, this.color, this.size);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withAlpha(25),
+        border: Border.all(color: color.withAlpha(100)),
+      ),
+      child: Center(
+        child: Text(text,
+          style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w700),
+          textAlign: TextAlign.center),
+      ),
+    );
+  }
+}
+
+class _GridBg extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white.withOpacity(0.04)..strokeWidth = 0.5;
-    const step = 16.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
+    final paint = Paint()..color = const Color(0xFF1A1A1A)..strokeWidth = 0.5;
+    const step = 40.0;
+    for (double x = 0; x < size.width; x += step) canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    for (double y = 0; y < size.height; y += step) canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
   }
-  @override
-  bool shouldRepaint(_) => false;
+  @override bool shouldRepaint(_) => false;
 }
