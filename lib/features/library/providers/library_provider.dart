@@ -49,4 +49,13 @@ class LibraryNotifier extends AsyncNotifier<List<GameEntry>> {
     if (game == null) return;
     await updateGame(game.copyWith(lastPlayedAt: DateTime.now().toIso8601String()));
   }
+
+  Future<void> addPlaytime(String titleId, int additionalSeconds) async {
+    final game = getGame(titleId);
+    if (game == null) return;
+    await updateGame(game.copyWith(
+      totalPlaytimeSeconds: game.totalPlaytimeSeconds + additionalSeconds,
+      lastPlayedAt: DateTime.now().toIso8601String(),
+    ));
+  }
 }
