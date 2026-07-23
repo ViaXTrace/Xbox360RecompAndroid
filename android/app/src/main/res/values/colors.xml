@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#FF000000</color>
+    <color name="xbox_green">#FF107C10</color>
+    <color name="launch_background">#FF000000</color>
+</resources>
