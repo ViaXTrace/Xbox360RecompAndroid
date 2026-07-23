@@ -1,4 +1,5 @@
 #pragma once
+#include "ir.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -101,6 +102,8 @@ private:
     // JIT code arena management
     uint8_t* allocJitPage(size_t size);
     void     flushICache(uint8_t* start, size_t size);
+    // Compile an IR block to native ARM64; defined in arm64_backend.cpp
+    size_t   jitCompileBlock(const IrBlock& block, uint8_t* out, size_t maxBytes);
 
     // Guest memory
     uint8_t* m_guestMemory = nullptr;
