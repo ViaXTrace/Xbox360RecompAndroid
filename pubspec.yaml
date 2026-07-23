@@ -86,7 +86,3 @@ flutter:
     - assets/icons/
     - assets/shaders/
     - assets/compat/
-  fonts:
-    - family: XboxFont
-      fonts:
-        - asset: assets/fonts/XboxOne-Regular.ttf
