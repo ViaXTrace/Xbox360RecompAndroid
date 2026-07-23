@@ -1,0 +1,6 @@
+#!/bin/sh
+# Gradle start up script for UN*X
+GRADLE_OPTS="$GRADLE_OPTS -Xmx4g"
+exec "$(dirname "$0")"/gradle/wrapper/gradle-wrapper.jar \
+  "$@" 2>/dev/null \
+|| exec java -jar "$(dirname "$0")"/gradle/wrapper/gradle-wrapper.jar "$@"
