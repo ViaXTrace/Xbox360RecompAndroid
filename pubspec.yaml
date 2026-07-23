@@ -49,6 +49,7 @@ dependencies:
 
   # Gaming & input
   gamepads: ^0.1.7
+  ffi: ^2.1.0
 
   # System info
   device_info_plus: ^10.1.0

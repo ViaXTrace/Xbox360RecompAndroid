@@ -15,7 +15,7 @@ class SettingsScreen extends StatelessWidget {
           _Section(title: 'General', children: [
             _SettingTile(icon: Icons.language, title: 'Language', subtitle: 'System default', onTap: () {}),
             _SettingTile(icon: Icons.cloud_download, title: 'Check for Updates', subtitle: 'Current: v0.1.0', onTap: () {}),
-            _SettingTile(icon: Icons.database, title: 'Compatibility Database', subtitle: 'Sync from GitHub', onTap: () {}),
+            _SettingTile(icon: Icons.storage, title: 'Compatibility Database', subtitle: 'Sync from GitHub', onTap: () {}),
           ]),
           const SizedBox(height: 16),
           _Section(title: 'Default Game Settings', children: [
@@ -75,7 +75,7 @@ class _Section extends StatelessWidget {
               for (int i = 0; i < children.length; i++) ...[
                 children[i],
                 if (i < children.length - 1)
-                  const Divider(height: 1, indent: 56, endIndent: 0, color: Colors.white08),
+                  const Divider(height: 1, indent: 56, endIndent: 0, color: Colors.white.withOpacity(0.08)),
               ],
             ],
           ),
@@ -99,7 +99,7 @@ class _SettingTile extends StatelessWidget {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: Colors.white08, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, size: 18, color: Colors.white70),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white)),

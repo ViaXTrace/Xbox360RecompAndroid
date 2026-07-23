@@ -286,7 +286,7 @@ class _IntField extends StatelessWidget {
       keyboardType: TextInputType.number,
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
-        filled: true, fillColor: Colors.white08,
+        filled: true, fillColor: Colors.white.withOpacity(0.08),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
       ),

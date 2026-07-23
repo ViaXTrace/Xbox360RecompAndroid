@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/game_entry.dart';
 import '../../../core/native/engine_bridge.dart';
 import '../../library/providers/library_provider.dart';
 import '../widgets/touch_controls_overlay.dart';

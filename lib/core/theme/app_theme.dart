@@ -28,7 +28,7 @@ class AppTheme {
         outline: _xboxBorder,
       ),
       scaffoldBackgroundColor: _xboxDark,
-      cardTheme: const CardThemeData(
+      cardTheme: const CardTheme(
         color: _xboxCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -140,7 +140,7 @@ class AppTheme {
         overlayColor: Color(0x2052B043),
         inactiveTrackColor: _xboxBorder,
       ),
-      dialogTheme: const DialogThemeData(
+      dialogTheme: const DialogTheme(
         backgroundColor: _xboxCard,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(

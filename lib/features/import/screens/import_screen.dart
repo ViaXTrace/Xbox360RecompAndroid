@@ -198,7 +198,7 @@ class _FormatCard extends StatelessWidget {
                     children: formats.map((f) => Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white08,
+                        color: Colors.white.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(f, style: const TextStyle(fontSize: 10, color: Colors.white54, fontFamily: 'monospace')),
