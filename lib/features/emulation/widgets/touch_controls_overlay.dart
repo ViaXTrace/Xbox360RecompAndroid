@@ -44,7 +44,7 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
         // ─ Left shoulder / trigger ───────────────────
         Positioned(
           left: 24, top: 14,
-          child: Column(spacing: 6, children: [
+          child: Column(children: [
             _TriggerButton(
               label: 'LT',
               value: _ltValue,
@@ -59,7 +59,7 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
         // ─ Right shoulder / trigger ──────────────────
         Positioned(
           right: 24, top: 14,
-          child: Column(spacing: 6, children: [
+          child: Column(children: [
             _TriggerButton(
               label: 'RT',
               value: _rtValue,
