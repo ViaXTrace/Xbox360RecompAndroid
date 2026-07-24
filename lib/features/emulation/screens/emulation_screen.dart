@@ -87,7 +87,7 @@ class _EmulationScreenState extends ConsumerState<EmulationScreen>
     try {
       setState(() => _statusMessage = 'Parsing executable…');
       final bridge = EngineBridge.instance;
-      int result = await compute((_) => bridge.loadGame(game.execPath, game.format), null);
+      int result = bridge.loadGame(game.execPath, game.format);
 
       if (result != 0) {
         if (mounted) _showError('Failed to load game (error $result)');
@@ -95,7 +95,7 @@ class _EmulationScreenState extends ConsumerState<EmulationScreen>
       }
 
       setState(() => _statusMessage = 'Starting JIT engine…');
-      result = await compute((_) => bridge.startJit(4), null);
+      result = bridge.startJit(4);
       if (result != 0) {
         if (mounted) _showError('JIT engine failed to start (error $result)');
         return;
@@ -376,7 +376,3 @@ class _MenuToggle extends StatelessWidget {
   }
 }
 
-// Stub compute for bridge calls
-Future<R> compute<Q, R>(R Function(Q) callback, Q message) async {
-  return callback(message);
-}
