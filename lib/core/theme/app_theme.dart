@@ -105,7 +105,7 @@ class AppTheme {
         shadowColor: Colors.transparent,
         height: 64,
       ),
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         color: card,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
@@ -205,7 +205,7 @@ class AppTheme {
         circularTrackColor: border,
         linearMinHeight: 4,
       ),
-      dialogTheme: DialogThemeData(
+      dialogTheme: DialogTheme(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
         elevation: 8,
@@ -233,7 +233,7 @@ class AppTheme {
         elevation: 4,
         actionTextColor: xboxGreenLight,
       ),
-      tabBarTheme: TabBarThemeData(
+      tabBarTheme: TabBarTheme(
         labelColor: xboxGreenLight,
         unselectedLabelColor: Colors.white38,
         indicatorColor: xboxGreen,
