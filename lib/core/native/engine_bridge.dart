@@ -202,6 +202,9 @@ class EngineBridge {
   static double getFrameTime() => _initialized ? _metricsGetFrameTime() * 1000 : 0.0;
   static int getRamUsage()     => _initialized ? _metricsGetRamUsage() : 0;
   static double getGpuTemp()   => _initialized ? _metricsGetGpuTemp() : 0.0;
-
   static void shutdown() { if (_initialized) _engineShutdown(); }
+  static bool get isAvailable => _initialized;
+  static int loadXex(String path) => instance.loadGame(path, GameFormat.xex);
+  static int loadIso(String path) => instance.loadGame(path, GameFormat.iso);
+  static int loadStfs(String path) => instance.loadGame(path, GameFormat.stfs);
 }
